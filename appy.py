@@ -495,7 +495,6 @@ def render_variance_bar(df):
 
 
 def render_gantt_section(df, group_col, tab_key=""):
-    # tab_key namespaces widget keys so rolling/non-rolling tabs never collide (fixes DuplicateElementId)
     _k = f"{tab_key}_{group_col}" if tab_key else group_col
     fc1, fc2, fc3 = st.columns([2, 2, 1])
     with fc1:
@@ -533,35 +532,19 @@ def render_gantt_section(df, group_col, tab_key=""):
 # SIDEBAR  (minimal — just anchor dates nav)
 # ─────────────────────────────────────────
 with st.sidebar:
-    # ── Merck wordmark (text-based, no broken image) ──────────────────────
     st.markdown("""
-    <div style="padding:20px 0 4px 0;">
-        <div style="font-size:1.55rem;font-weight:900;color:#6ECEB2;
-                    letter-spacing:0.10em;text-transform:uppercase;
-                    line-height:1;">MERCK</div>
-        <div style="font-size:0.58rem;color:rgba(255,255,255,0.45);
-                    letter-spacing:0.18em;text-transform:uppercase;
-                    margin-top:2px;">Regulatory Affairs</div>
+    <div style="padding:20px 0 8px 0;">
+        <div style="font-size:1.6rem;font-weight:900;color:#6ECEB2;
+                    letter-spacing:0.12em;text-transform:uppercase;line-height:1;">MERCK</div>
+        <div style="font-size:0.58rem;color:rgba(255,255,255,0.4);
+                    letter-spacing:0.18em;text-transform:uppercase;margin-top:3px;">
+            Regulatory Affairs</div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("<hr style='border-color:rgba(110,206,178,0.3);margin:10px 0 16px 0;'>",
+    st.markdown("<hr style='border-color:rgba(110,206,178,0.25);margin:8px 0 14px 0;'>",
                 unsafe_allow_html=True)
 
-    # ── Navigation ────────────────────────────────────────────────────────
-    st.markdown("<div style='font-size:0.60rem;letter-spacing:0.12em;color:#6ECEB2;"
-                "text-transform:uppercase;margin-bottom:6px;'>Navigation</div>",
-                unsafe_allow_html=True)
-    page = st.radio(
-        "",
-        ["📋 Submission Dashboard", "📌 Anchor Dates"],
-        label_visibility="collapsed",
-    )
-
-    st.markdown("<hr style='border-color:rgba(110,206,178,0.3);margin:16px 0 14px 0;'>",
-                unsafe_allow_html=True)
-
-    # ── Data status ───────────────────────────────────────────────────────
     r_loaded  = st.session_state.rolling_data is not None
     nr_loaded = st.session_state.nonrolling_data is not None
 
@@ -569,291 +552,173 @@ with st.sidebar:
                 "text-transform:uppercase;margin-bottom:8px;'>Data Status</div>",
                 unsafe_allow_html=True)
 
-    def _status_pill(label, loaded, df):
-        dot   = "#00857C" if loaded else "rgba(255,255,255,0.2)"
-        count = f"<span style='color:rgba(255,255,255,0.45);font-size:0.70rem;'>&nbsp;·&nbsp;{len(df):,} rows</span>" if loaded else ""
-        return (f"<div style='display:flex;align-items:center;gap:8px;"
-                f"margin-bottom:8px;'>"
+    r_count  = len(st.session_state.rolling_data)    if r_loaded  else 0
+    nr_count = len(st.session_state.nonrolling_data) if nr_loaded else 0
+
+    def _pill(label, loaded, count):
+        dot = "#00857C" if loaded else "rgba(255,255,255,0.18)"
+        rows = f"<span style='color:rgba(255,255,255,0.4);font-size:0.68rem;'> · {count:,} rows</span>" if loaded else ""
+        return (f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:9px;'>"
                 f"<div style='width:8px;height:8px;border-radius:50%;background:{dot};flex-shrink:0;'></div>"
-                f"<span style='font-size:0.78rem;font-weight:600;'>{label}</span>{count}</div>")
+                f"<span style='font-size:0.78rem;font-weight:600;'>{label}</span>{rows}</div>")
 
     st.markdown(
-        _status_pill("Rolling", r_loaded, st.session_state.rolling_data or []) +
-        _status_pill("Non-Rolling", nr_loaded, st.session_state.nonrolling_data or []),
+        _pill("Rolling",     r_loaded,  r_count) +
+        _pill("Non-Rolling", nr_loaded, nr_count),
         unsafe_allow_html=True,
     )
 
-    st.markdown("<hr style='border-color:rgba(110,206,178,0.3);margin:14px 0 12px 0;'>",
+    st.markdown("<hr style='border-color:rgba(110,206,178,0.25);margin:12px 0 10px 0;'>",
                 unsafe_allow_html=True)
-
     st.markdown(
-        f"<div style='font-size:0.62rem;color:rgba(255,255,255,0.35);'>"
+        f"<div style='font-size:0.62rem;color:rgba(255,255,255,0.3);'>"
         f"{datetime.now().strftime('%d %b %Y')}</div>",
         unsafe_allow_html=True,
     )
+
+# ── Top-bar page navigation (replaces sidebar radio) ─────────────────────
+_nav_col1, _nav_col2, _nav_spacer = st.columns([2, 2, 6])
+with _nav_col1:
+    if st.button("📋  Submission Dashboard", use_container_width=True,
+                 type="primary" if st.session_state.get("_page", "dashboard") == "dashboard" else "secondary"):
+        st.session_state["_page"] = "dashboard"
+        st.rerun()
+with _nav_col2:
+    if st.button("📌  Anchor Dates", use_container_width=True,
+                 type="primary" if st.session_state.get("_page", "dashboard") == "anchor" else "secondary"):
+        st.session_state["_page"] = "anchor"
+        st.rerun()
+
+page = st.session_state.get("_page", "dashboard")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MAIN PAGE – SUBMISSION DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════════
-if page == "📋 Submission Dashboard":
+if page == "dashboard":
 
-    r_loaded  = st.session_state.rolling_data is not None
-    nr_loaded = st.session_state.nonrolling_data is not None
-    neither_loaded = not r_loaded and not nr_loaded
+    _r_loaded  = st.session_state.rolling_data is not None
+    _nr_loaded = st.session_state.nonrolling_data is not None
 
-    # ══════════════════════════════════════════════════════════════════════
-    # LANDING PAGE — shown when no data is loaded yet
-    # ══════════════════════════════════════════════════════════════════════
-    if neither_loaded:
+    # Show landing hero: full when no data, compact when data loaded
+    _show_full_landing = not _r_loaded and not _nr_loaded
+    with st.expander("ℹ️  About this Dashboard — click to expand/collapse", expanded=_show_full_landing):
         st.markdown("""
         <style>
-        .lp-hero {
-            background: linear-gradient(135deg, #0C2340 0%, #005587 50%, #00857C 100%);
-            border-radius: 16px;
-            padding: 56px 48px 48px 48px;
-            margin-bottom: 32px;
-            position: relative;
-            overflow: hidden;
-        }
-        .lp-hero::before {
-            content: "";
-            position: absolute;
-            top: -60px; right: -60px;
-            width: 320px; height: 320px;
-            border-radius: 50%;
-            background: rgba(110,206,178,0.12);
-        }
-        .lp-hero::after {
-            content: "";
-            position: absolute;
-            bottom: -80px; left: -40px;
-            width: 240px; height: 240px;
-            border-radius: 50%;
-            background: rgba(0,133,124,0.15);
-        }
-        .lp-title {
-            font-size: 2.6rem;
-            font-weight: 800;
-            color: #FFFFFF;
-            letter-spacing: -0.01em;
-            line-height: 1.15;
-            margin-bottom: 12px;
-        }
-        .lp-sub {
-            font-size: 1.05rem;
-            color: #6ECEB2;
-            font-weight: 500;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            margin-bottom: 24px;
-        }
-        .lp-desc {
-            font-size: 1rem;
-            color: rgba(255,255,255,0.82);
-            max-width: 620px;
-            line-height: 1.65;
-        }
-        .lp-badge {
-            display: inline-block;
-            background: rgba(110,206,178,0.18);
-            border: 1px solid rgba(110,206,178,0.45);
-            color: #6ECEB2;
-            border-radius: 20px;
-            padding: 4px 14px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
-            margin-right: 8px;
-            margin-bottom: 20px;
-        }
-        .lp-feature-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 18px;
-            margin-bottom: 28px;
-        }
-        .lp-feature-card {
-            background: white;
-            border-radius: 12px;
-            padding: 24px 22px;
-            border-top: 4px solid #00857C;
-            box-shadow: 0 2px 12px rgba(12,35,64,0.08);
-        }
-        .lp-feature-card h4 {
-            color: #0C2340;
-            font-size: 0.95rem;
-            font-weight: 700;
-            margin: 10px 0 8px 0;
-        }
-        .lp-feature-card p {
-            color: #5a6a7a;
-            font-size: 0.82rem;
-            line-height: 1.55;
-            margin: 0;
-        }
-        .lp-feature-icon {
-            font-size: 1.8rem;
-        }
-        .lp-stat-row {
-            display: flex;
-            gap: 18px;
-            margin-bottom: 28px;
-        }
-        .lp-stat {
-            flex: 1;
-            background: linear-gradient(135deg, #0C2340, #005587);
-            border-radius: 10px;
-            padding: 20px 18px;
-            text-align: center;
-            color: white;
-        }
-        .lp-stat-num {
-            font-size: 2rem;
-            font-weight: 800;
-            color: #6ECEB2;
-        }
-        .lp-stat-label {
-            font-size: 0.72rem;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: rgba(255,255,255,0.7);
-            margin-top: 4px;
-        }
-        .lp-step {
-            display: flex;
-            align-items: flex-start;
-            gap: 16px;
-            margin-bottom: 16px;
-        }
-        .lp-step-num {
-            min-width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #00857C, #6ECEB2);
-            color: white;
-            font-weight: 800;
-            font-size: 0.95rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .lp-step-text strong { color: #0C2340; font-size: 0.9rem; }
-        .lp-step-text p { color: #5a6a7a; font-size: 0.82rem; margin: 2px 0 0 0; }
-        .lp-divider {
-            border: none;
-            border-top: 1px solid #e0e8ea;
-            margin: 28px 0;
-        }
+        .lp-hero{background:linear-gradient(135deg,#0C2340 0%,#005587 55%,#00857C 100%);
+                 border-radius:14px;padding:52px 44px 44px;margin-bottom:28px;position:relative;overflow:hidden;}
+        .lp-hero::after{content:"";position:absolute;bottom:-70px;left:-40px;width:220px;height:220px;
+                        border-radius:50%;background:rgba(0,133,124,0.15);}
+        .lp-title{font-size:2.4rem;font-weight:900;color:#fff;line-height:1.15;margin-bottom:10px;}
+        .lp-sub{font-size:0.75rem;color:#6ECEB2;font-weight:600;letter-spacing:0.12em;
+                text-transform:uppercase;margin-bottom:20px;}
+        .lp-desc{font-size:0.97rem;color:rgba(255,255,255,0.78);max-width:600px;line-height:1.65;}
+        .lp-pills{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:26px;}
+        .lp-pill{background:rgba(110,206,178,0.15);border:1px solid rgba(110,206,178,0.4);
+                 color:#6ECEB2;border-radius:20px;padding:4px 14px;font-size:0.72rem;
+                 font-weight:600;letter-spacing:0.06em;text-transform:uppercase;}
+        .lp-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:26px;}
+        .lp-card{background:white;border-radius:10px;padding:22px 20px;
+                 border-top:4px solid #00857C;box-shadow:0 2px 10px rgba(12,35,64,0.07);}
+        .lp-card h4{color:#0C2340;font-size:0.9rem;font-weight:700;margin:8px 0 6px;}
+        .lp-card p{color:#5a6a7a;font-size:0.80rem;line-height:1.55;margin:0;}
+        .lp-caps{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:26px;}
+        .lp-cap{flex:1;min-width:150px;border-radius:10px;padding:16px 18px;color:white;}
+        .lp-cap-lbl{font-size:0.62rem;text-transform:uppercase;letter-spacing:0.09em;
+                    color:#6ECEB2;margin-bottom:5px;}
+        .lp-cap-val{font-size:0.88rem;font-weight:700;}
+        .lp-steps{margin-top:4px;}
+        .lp-step{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px;}
+        .lp-num{min-width:32px;height:32px;border-radius:50%;
+                background:linear-gradient(135deg,#00857C,#6ECEB2);
+                color:white;font-weight:800;font-size:0.85rem;
+                display:flex;align-items:center;justify-content:center;}
+        .lp-step strong{color:#0C2340;font-size:0.88rem;}
+        .lp-step p{color:#5a6a7a;font-size:0.80rem;margin:2px 0 0;}
         </style>
 
-        <!-- HERO BANNER -->
         <div class="lp-hero">
             <div class="lp-sub">Merck · Regulatory Affairs</div>
             <div class="lp-title">Submission<br>Intelligence Dashboard</div>
-            <div>
-                <span class="lp-badge">Rolling Submissions</span>
-                <span class="lp-badge">Non-Rolling Submissions</span>
-                <span class="lp-badge">Anchor Dates</span>
+            <div class="lp-pills">
+                <span class="lp-pill">Rolling Submissions</span>
+                <span class="lp-pill">Non-Rolling Submissions</span>
+                <span class="lp-pill">Anchor Dates</span>
+                <span class="lp-pill">Regional · Central · Local</span>
             </div>
             <div class="lp-desc">
-                A unified regulatory filing tracker for upper management — providing real-time visibility
-                into wave progress, module completion, schedule variance, and key milestone dates
-                across your NDA / BLA portfolio.
+                A unified regulatory filing tracker providing real-time visibility into wave progress,
+                module completion, schedule variance, and key milestone dates across your NDA / BLA portfolio.
             </div>
         </div>
 
-        <!-- CAPABILITY PILLS -->
-        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:28px;">
-            <div style="background:linear-gradient(135deg,#0C2340,#005587);border-radius:10px;padding:16px 22px;color:white;flex:1;min-width:160px;">
-                <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:#6ECEB2;margin-bottom:6px;">Rolling</div>
-                <div style="font-size:0.9rem;font-weight:700;">Wave-by-Wave Tracking</div>
+        <div class="lp-caps">
+            <div class="lp-cap" style="background:linear-gradient(135deg,#0C2340,#005587);">
+                <div class="lp-cap-lbl">Rolling</div>
+                <div class="lp-cap-val">Wave-by-Wave Tracking</div>
             </div>
-            <div style="background:linear-gradient(135deg,#005587,#00857C);border-radius:10px;padding:16px 22px;color:white;flex:1;min-width:160px;">
-                <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:#6ECEB2;margin-bottom:6px;">Non-Rolling</div>
-                <div style="font-size:0.9rem;font-weight:700;">Module Group Analysis</div>
+            <div class="lp-cap" style="background:linear-gradient(135deg,#005587,#00857C);">
+                <div class="lp-cap-lbl">Non-Rolling</div>
+                <div class="lp-cap-val">Module Group Analysis</div>
             </div>
-            <div style="background:linear-gradient(135deg,#00857C,#6ECEB2);border-radius:10px;padding:16px 22px;color:#0C2340;flex:1;min-width:160px;">
-                <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:#0C2340;opacity:0.7;margin-bottom:6px;">Filter</div>
-                <div style="font-size:0.9rem;font-weight:700;">Regional · Central · Local</div>
+            <div class="lp-cap" style="background:linear-gradient(135deg,#00857C,#6ECEB2);color:#0C2340;">
+                <div class="lp-cap-lbl" style="color:#0C2340;opacity:0.65;">Filter</div>
+                <div class="lp-cap-val" style="color:#0C2340;">Regional · Central · Local</div>
             </div>
-            <div style="background:linear-gradient(135deg,#0C2340,#00857C);border-radius:10px;padding:16px 22px;color:white;flex:1;min-width:160px;">
-                <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:#6ECEB2;margin-bottom:6px;">Milestones</div>
-                <div style="font-size:0.9rem;font-weight:700;">Anchor Date Manager</div>
+            <div class="lp-cap" style="background:linear-gradient(135deg,#0C2340,#00857C);">
+                <div class="lp-cap-lbl">Milestones</div>
+                <div class="lp-cap-val">Anchor Date Manager</div>
             </div>
         </div>
 
-        <!-- FEATURE CARDS -->
-        <div class="lp-feature-grid">
-            <div class="lp-feature-card">
-                <div class="lp-feature-icon">🌊</div>
+        <div class="lp-cards">
+            <div class="lp-card">
+                <div style="font-size:1.6rem;">🌊</div>
                 <h4>Rolling Submission Tracker</h4>
-                <p>Monitor wave-by-wave filing progress with completion rates, schedule variance,
-                and Gantt visualizations across all submission waves.</p>
+                <p>Monitor wave-by-wave filing progress with completion rates, schedule variance, and Gantt views.</p>
             </div>
-            <div class="lp-feature-card">
-                <div class="lp-feature-icon">📦</div>
+            <div class="lp-card">
+                <div style="font-size:1.6rem;">📦</div>
                 <h4>Non-Rolling Module Analysis</h4>
-                <p>Drill into CTD module groups filtered by Regional or Central components.
-                Instantly see document status breakdowns and outstanding items.</p>
+                <p>Drill into CTD module groups filtered by Regional or Central components with status breakdowns.</p>
             </div>
-            <div class="lp-feature-card">
-                <div class="lp-feature-icon">📅</div>
+            <div class="lp-card">
+                <div style="font-size:1.6rem;">📅</div>
                 <h4>Gantt & Schedule Variance</h4>
-                <p>Side-by-side Planned vs Actual timeline bars with a live "Today" indicator
-                and automated variance categorization.</p>
+                <p>Planned vs Actual timeline bars with a live Today marker and automated variance categorization.</p>
             </div>
-            <div class="lp-feature-card">
-                <div class="lp-feature-icon">📌</div>
-                <h4>Anchor Date Management</h4>
-                <p>Manually add milestones or bulk-import from CSV / Excel.
-                Track Plan Baseline, Agency Submission, Decision dates and more.</p>
+            <div class="lp-card">
+                <div style="font-size:1.6rem;">📌</div>
+                <h4>Anchor Date Manager</h4>
+                <p>Add milestones manually or bulk-import from CSV / Excel. Track Plan Baseline, Submission, and Decision dates.</p>
             </div>
-            <div class="lp-feature-card">
-                <div class="lp-feature-icon">🗂️</div>
+            <div class="lp-card">
+                <div style="font-size:1.6rem;">🗂️</div>
                 <h4>Regional vs Central Filter</h4>
-                <p>Instantly segment non-rolling submissions by Component Source —
-                Local, Central, or Regional — across all analysis tabs.</p>
+                <p>Segment non-rolling submissions by Component Source across all analysis and Gantt tabs instantly.</p>
             </div>
-            <div class="lp-feature-card">
-                <div class="lp-feature-icon">⬇️</div>
+            <div class="lp-card">
+                <div style="font-size:1.6rem;">⬇️</div>
                 <h4>Export & Drill-Through</h4>
-                <p>Download filtered datasets as CSV for any wave or module group.
-                Built for regulatory operations and upper management reporting.</p>
+                <p>Download filtered datasets as CSV for any wave or module group for offline reporting.</p>
             </div>
         </div>
 
-        <hr class="lp-divider">
-
-        <!-- HOW TO GET STARTED -->
-        <div style="font-size:1rem;font-weight:700;color:#0C2340;margin-bottom:16px;">
-            🚀 &nbsp;Get Started in 3 Steps
-        </div>
-        <div class="lp-step">
-            <div class="lp-step-num">1</div>
-            <div class="lp-step-text">
-                <strong>Upload your Rolling Submission Excel file</strong>
-                <p>Open the Rolling Submission tab → click the upload area → select your PSPM Planner Report sheet.</p>
-            </div>
-        </div>
-        <div class="lp-step">
-            <div class="lp-step-num">2</div>
-            <div class="lp-step-text">
-                <strong>Upload your Non-Rolling Submission Excel file</strong>
-                <p>Switch to the Non-Rolling tab and repeat — then use the Component Source filter to toggle Regional vs Central.</p>
-            </div>
-        </div>
-        <div class="lp-step">
-            <div class="lp-step-num">3</div>
-            <div class="lp-step-text">
-                <strong>Add Anchor Dates</strong>
-                <p>Navigate to 📌 Anchor Dates in the sidebar to manually enter milestones or bulk-import a CSV / Excel file.</p>
-            </div>
+        <hr style="border:none;border-top:1px solid #e0e8ea;margin:24px 0;">
+        <div style="font-size:0.95rem;font-weight:700;color:#0C2340;margin-bottom:14px;">🚀 Get Started</div>
+        <div class="lp-steps">
+            <div class="lp-step"><div class="lp-num">1</div>
+                <div><strong>Upload your Rolling Submission Excel file</strong>
+                <p>Open the Rolling Submission tab → upload your PSPM Planner Report.</p></div></div>
+            <div class="lp-step"><div class="lp-num">2</div>
+                <div><strong>Upload your Non-Rolling Submission Excel file</strong>
+                <p>Switch to Non-Rolling → upload, then filter by Component Source.</p></div></div>
+            <div class="lp-step"><div class="lp-num">3</div>
+                <div><strong>Add Anchor Dates</strong>
+                <p>Go to 📌 Anchor Dates in the sidebar to enter milestones or import a CSV / Excel file.</p></div></div>
         </div>
         """, unsafe_allow_html=True)
 
-    # ── Always show the page header & tabs (tabs contain uploads) ─────────
     page_header(
         "📋 Submission Dashboard",
         subtitle="Regulatory Filing Progress · Upper Management View",
@@ -1086,14 +951,14 @@ if page == "📋 Submission Dashboard":
             df2 = st.session_state.nonrolling_data
             total2, completed2, remaining2, planned2, rate2, variance2 = calculate_metrics(df2)
 
-            # ── Regional Component Source filter ──────────────────────────
+            # Regional Component Source filter
             if "Component Source" in df2.columns:
-                src_options = ["All"] + sorted(
+                src_opts = ["All"] + sorted(
                     df2["Component Source"].dropna().astype(str).str.strip().unique().tolist()
                 )
                 sel_src = st.selectbox(
                     "🗂️ Filter by Component Source (Regional / Central / Local)",
-                    src_options, key="nr_comp_source",
+                    src_opts, key="nr_comp_source",
                 )
             else:
                 sel_src = "All"
@@ -1132,27 +997,33 @@ if page == "📋 Submission Dashboard":
                     st.plotly_chart(render_gauge(rate2, "Overall Module Completion"),
                                     use_container_width=True)
                 with cs2:
-                    if not mod_sum.empty:
-                        stk = mod_sum.melt(
-                            id_vars="Module Group",
-                            value_vars=["Completed", "Remaining"],
-                            var_name="Status", value_name="Count"
-                        )
-                        fig_stk = px.bar(
-                            stk, x="Module Group", y="Count", color="Status",
-                            title="Completed vs Remaining by Module Group",
-                            barmode="stack",
-                            color_discrete_map={"Completed": MERCK_TEAL,
-                                                "Remaining": MERCK_ORANGE}
-                        )
-                        fig_stk.update_layout(
-                            plot_bgcolor="white", paper_bgcolor="white",
-                            font=dict(color=MERCK_BLUE), height=270,
-                            margin=dict(t=40, b=10)
-                        )
-                        fig_stk.update_xaxes(showgrid=False)
-                        fig_stk.update_yaxes(gridcolor="#E8ECEC")
-                        st.plotly_chart(fig_stk, use_container_width=True)
+                    fig_status_nr = render_status_donut(df2_view)
+                    if fig_status_nr:
+                        st.plotly_chart(fig_status_nr, use_container_width=True)
+
+                if not mod_sum.empty:
+                    st.markdown("---")
+                    section_label("Completed vs Remaining by Module Group")
+                    stk = mod_sum.melt(
+                        id_vars="Module Group",
+                        value_vars=["Completed", "Remaining"],
+                        var_name="Status", value_name="Count"
+                    )
+                    fig_stk = px.bar(
+                        stk, x="Module Group", y="Count", color="Status",
+                        title="Completed vs Remaining by Module Group",
+                        barmode="stack",
+                        color_discrete_map={"Completed": MERCK_TEAL,
+                                            "Remaining": MERCK_ORANGE}
+                    )
+                    fig_stk.update_layout(
+                        plot_bgcolor="white", paper_bgcolor="white",
+                        font=dict(color=MERCK_BLUE), height=270,
+                        margin=dict(t=40, b=10)
+                    )
+                    fig_stk.update_xaxes(showgrid=False)
+                    fig_stk.update_yaxes(gridcolor="#E8ECEC")
+                    st.plotly_chart(fig_stk, use_container_width=True)
 
             # ── NR2: Module Analysis ──────────────────────────────────────
             with st_nr2:
@@ -1261,9 +1132,49 @@ if page == "📋 Submission Dashboard":
 # ═══════════════════════════════════════════════════════════════════════════
 # ANCHOR DATES PAGE
 # ═══════════════════════════════════════════════════════════════════════════
-elif page == "📌 Anchor Dates":
+elif page == "anchor":
     page_header("📌 Anchor Dates", subtitle="Manual milestone entry & tracking")
 
+    # Bulk import via CSV or Excel
+    section_label("📁 Bulk Import (CSV or Excel)")
+    st.caption("File must have columns: **Anchor Date**, **Date** (YYYY-MM-DD), **Status** (Complete / In Progress / Not Started)")
+    up_col, tmpl_col = st.columns([3, 1])
+    with up_col:
+        anchor_file = st.file_uploader(
+            "Upload anchor dates file", type=["csv", "xlsx", "xls"],
+            key="anchor_file_uploader", label_visibility="collapsed"
+        )
+        if anchor_file is not None:
+            try:
+                df_up = pd.read_csv(anchor_file) if anchor_file.name.endswith(".csv") else pd.read_excel(anchor_file)
+                df_up.columns = df_up.columns.astype(str).str.strip()
+                col_map = {}
+                for c in df_up.columns:
+                    cl = c.lower()
+                    if "anchor" in cl or cl in ("name", "milestone"): col_map[c] = "Anchor Date"
+                    elif "date" in cl: col_map[c] = "Date"
+                    elif "status" in cl: col_map[c] = "Status"
+                df_up = df_up.rename(columns=col_map)
+                if not {"Anchor Date", "Date", "Status"}.issubset(df_up.columns):
+                    st.error(f"Missing columns. Found: {list(df_up.columns)}. Need: Anchor Date, Date, Status")
+                else:
+                    df_up["Date"] = pd.to_datetime(df_up["Date"], errors="coerce").dt.date
+                    df_up = df_up.dropna(subset=["Date"])[["Anchor Date", "Date", "Status"]]
+                    before = len(st.session_state.anchor_dates)
+                    st.session_state.anchor_dates = pd.concat(
+                        [st.session_state.anchor_dates, df_up], ignore_index=True
+                    ).drop_duplicates(subset=["Anchor Date", "Date"]).reset_index(drop=True)
+                    st.success(f"✅ Imported {len(st.session_state.anchor_dates) - before} new row(s) from **{anchor_file.name}**")
+            except Exception as e:
+                st.error(f"Upload error: {e}")
+    with tmpl_col:
+        tmpl = pd.DataFrame({"Anchor Date": ["Plan Baseline", "Agency Submission"],
+                              "Date": ["2025-06-01", "2025-12-15"],
+                              "Status": ["Complete", "Not Started"]})
+        st.download_button("⬇️ Download Template", data=tmpl.to_csv(index=False).encode(),
+                           file_name="anchor_dates_template.csv", mime="text/csv")
+
+    st.markdown("---")
     col_form, col_tbl = st.columns([1, 2])
 
     with col_form:
