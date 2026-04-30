@@ -2,34 +2,183 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import datetime
 
-st.set_page_config(page_title="Submission Dashboard", layout="wide")
+# ─────────────────────────────────────────
+# MERCK COLOR PALETTE
+# ─────────────────────────────────────────
+MERCK_TEAL       = "#00857C"
+MERCK_TEAL_LIGHT = "#6ECEB2"
+MERCK_BLUE       = "#0C2340"
+MERCK_BLUE_MID   = "#005587"
+MERCK_GRAY       = "#C1C6C8"
+MERCK_ORANGE     = "#E37222"
+MERCK_RED        = "#BF3030"
 
-# -------------------------
+st.set_page_config(page_title="Submission Dashboard", layout="wide", page_icon="📋")
+
+# ─────────────────────────────────────────
+# GLOBAL CSS
+# ─────────────────────────────────────────
+st.markdown("""
+<style>
+    #MainMenu {visibility: hidden;}
+    footer     {visibility: hidden;}
+    header     {visibility: hidden;}
+
+    /* ── Sidebar ── */
+    section[data-testid="stSidebar"] {
+        background-color: #0C2340;
+        border-right: 3px solid #00857C;
+    }
+    section[data-testid="stSidebar"] * { color: #FFFFFF !important; }
+
+    /* ── Page header banner ── */
+    .merck-header {
+        background: linear-gradient(90deg, #0C2340 0%, #005587 55%, #00857C 100%);
+        color: white;
+        padding: 18px 28px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        font-size: 1.35rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        border-left: 5px solid #6ECEB2;
+        box-shadow: 0 2px 8px rgba(12,35,64,0.18);
+    }
+    .merck-header small {
+        font-size: 0.70rem;
+        font-weight: 400;
+        opacity: 0.80;
+        display: block;
+        margin-top: 4px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    /* ── Section sub-label ── */
+    .section-label {
+        background: #f0f6f6;
+        border-left: 4px solid #00857C;
+        padding: 8px 14px;
+        border-radius: 0 6px 6px 0;
+        color: #0C2340;
+        font-weight: 600;
+        font-size: 0.93rem;
+        margin: 18px 0 12px 0;
+    }
+
+    /* ── Metric cards ── */
+    div[data-testid="metric-container"] {
+        background: #f4f8f8;
+        border-left: 4px solid #00857C;
+        border-radius: 6px;
+        padding: 14px 16px;
+        box-shadow: 0 1px 4px rgba(12,35,64,0.07);
+    }
+    div[data-testid="metric-container"] label {
+        color: #005587 !important;
+        font-size: 0.73rem !important;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    div[data-testid="metric-container"] div[data-testid="metric-value"] {
+        color: #0C2340 !important;
+        font-size: 1.60rem !important;
+        font-weight: 700 !important;
+    }
+
+    /* ── Buttons ── */
+    .stButton>button, .stDownloadButton>button {
+        background-color: #00857C !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 4px !important;
+        font-weight: 600 !important;
+    }
+    .stButton>button:hover, .stDownloadButton>button:hover {
+        background-color: #005587 !important;
+    }
+
+    /* ── Tabs styling ── */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background: #f0f6f6;
+        padding: 6px 8px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background: white;
+        border-radius: 6px;
+        padding: 8px 20px;
+        font-weight: 600;
+        color: #005587;
+        border: 1px solid #C1C6C8;
+    }
+    .stTabs [aria-selected="true"] {
+        background: #0C2340 !important;
+        color: white !important;
+        border-color: #0C2340 !important;
+    }
+
+    /* ── Nav labels in sidebar ── */
+    .nav-section {
+        font-size: 0.60rem;
+        text-transform: uppercase;
+        letter-spacing: 0.10em;
+        color: #6ECEB2 !important;
+        margin-top: 10px;
+        margin-bottom: 2px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────
 # SESSION STATE
-# -------------------------
-if "uploaded_data" not in st.session_state:
-    st.session_state.uploaded_data = None
+# ─────────────────────────────────────────
+for key, val in {
+    "rolling_data":    None,
+    "nonrolling_data": None,
+    "anchor_dates":    pd.DataFrame(columns=["Anchor Date", "Date", "Status"]),
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = val
 
-if "file_type" not in st.session_state:
-    st.session_state.file_type = None
 
-if "anchor_dates" not in st.session_state:
-    st.session_state.anchor_dates = pd.DataFrame(
-        columns=["Anchor Date", "Date", "Status"]
+# ─────────────────────────────────────────
+# SHARED HELPERS
+# ─────────────────────────────────────────
+def page_header(title, subtitle=""):
+    sub = f"<small>{subtitle}</small>" if subtitle else ""
+    st.markdown(f'<div class="merck-header">{title}{sub}</div>', unsafe_allow_html=True)
+
+def section_label(text):
+    st.markdown(f'<div class="section-label">{text}</div>', unsafe_allow_html=True)
+
+def std_chart(fig):
+    """Apply standard Merck chart styling."""
+    fig.update_layout(
+        plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(color=MERCK_BLUE, size=11),
+        title_font=dict(color=MERCK_BLUE, size=13),
+        legend=dict(bgcolor="rgba(255,255,255,0.9)",
+                    bordercolor=MERCK_GRAY, borderwidth=1),
     )
+    fig.update_xaxes(showgrid=False, linecolor=MERCK_GRAY)
+    fig.update_yaxes(gridcolor="#E8ECEC", linecolor=MERCK_GRAY)
+    return fig
 
-# -------------------------
-# HELPER FUNCTIONS
-# -------------------------
+
+# ─────────────────────────────────────────
+# DATA LOADING
+# ─────────────────────────────────────────
 def read_submission_excel(uploaded_file, sheet_name):
     raw = pd.read_excel(uploaded_file, sheet_name=sheet_name, header=None)
-
     header_row = None
-
     for i, row in raw.iterrows():
         row_text = row.astype(str).str.strip().str.lower().tolist()
-
         if "task name" in row_text and (
             "planned start" in row_text or "planned finish" in row_text
         ):
@@ -38,94 +187,56 @@ def read_submission_excel(uploaded_file, sheet_name):
 
     if header_row is not None:
         headers = raw.iloc[header_row].fillna("").astype(str).str.strip()
-
-        clean_headers = []
-        for idx, header in enumerate(headers):
-            if header == "" or header.lower() == "nan":
-                clean_headers.append(f"blank_col_{idx}")
-            else:
-                clean_headers.append(header)
-
+        clean = []
+        for idx, h in enumerate(headers):
+            clean.append(h if h and h.lower() != "nan" else f"blank_col_{idx}")
         df = raw.iloc[header_row + 1:].copy()
-        df.columns = clean_headers
+        df.columns = clean
     else:
         df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
 
-    df.columns = (
-        df.columns
-        .astype(str)
-        .str.strip()
-        .str.replace(r"\s+", " ", regex=True)
-    )
-
+    df.columns = df.columns.astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
     df = df.dropna(how="all")
 
     rename_map = {}
-
     for col in df.columns:
         c = col.strip().lower()
-
-        if c == "actual start":
-            rename_map[col] = "Actual Start"
-        elif c == "actual finish":
-            rename_map[col] = "Actual Finish"
-        elif c == "planned start":
-            rename_map[col] = "Planned Start"
-        elif c == "planned finish":
-            rename_map[col] = "Planned Finish"
-        elif c == "task name":
-            rename_map[col] = "Task Name"
-        elif c == "component id":
-            rename_map[col] = "Component ID"
-        elif c == "component source":
-            rename_map[col] = "Component Source"
-        elif c == "filing status":
-            rename_map[col] = "Filing Status"
-        elif c == "task index":
-            rename_map[col] = "Task Index"
-        elif c == "wave":
-            rename_map[col] = "Wave"
-        elif c == "module":
-            rename_map[col] = "Module"
-
+        if   c == "actual start":       rename_map[col] = "Actual Start"
+        elif c == "actual finish":      rename_map[col] = "Actual Finish"
+        elif c == "planned start":      rename_map[col] = "Planned Start"
+        elif c == "planned finish":     rename_map[col] = "Planned Finish"
+        elif c == "task name":          rename_map[col] = "Task Name"
+        elif c == "component id":       rename_map[col] = "Component ID"
+        elif c == "component source":   rename_map[col] = "Component Source"
+        elif c == "filing status":      rename_map[col] = "Filing Status"
+        elif c == "task index":         rename_map[col] = "Task Index"
+        elif c == "wave":               rename_map[col] = "Wave"
+        elif c == "module":             rename_map[col] = "Module"
     df = df.rename(columns=rename_map)
 
-    # Try to find Wave if missing
     if "Wave" not in df.columns:
         for col in df.columns:
             if df[col].astype(str).str.contains("Rolling Submission|Wave", case=False, na=False).any():
                 df["Wave"] = df[col].ffill()
                 break
 
-    # Try to find Module if missing
     if "Module" not in df.columns:
         for col in df.columns:
             if df[col].astype(str).str.contains("Module", case=False, na=False).any():
                 df["Module"] = df[col].ffill()
                 break
-
     return df
 
 
 def clean_submission_data(df):
     df.columns = df.columns.astype(str).str.strip()
-
-    required_cols = [
-        "Task Name",
-        "Planned Start",
-        "Actual Start",
-        "Planned Finish",
-        "Actual Finish"
-    ]
-
-    missing = [col for col in required_cols if col not in df.columns]
-
+    required = ["Task Name", "Planned Start", "Actual Start", "Planned Finish", "Actual Finish"]
+    missing  = [c for c in required if c not in df.columns]
     if missing:
         st.error(f"Missing required columns: {missing}")
-        st.write("Columns found:", list(df.columns))
+        st.write("Found:", list(df.columns))
         st.stop()
 
-    # Keep only actual task rows
     if "Component ID" in df.columns:
         df = df[df["Component ID"].notna() & df["Task Name"].notna()]
     else:
@@ -141,563 +252,763 @@ def clean_submission_data(df):
             lambda x: "Completed" if pd.notna(x) else "Incomplete"
         )
 
-    # Power BI logic
-    if "Actually Completed" in df.columns:
-        df["Actually Completed"] = (
-            df["Actually Completed"]
-            .astype(str)
-            .str.strip()
-            .str.lower()
-            .map({"true": True, "false": False})
-        )
+    for col_flag, fallback in [("Actually Completed", "Actual Finish"),
+                                ("Planned Completed",  "Planned Finish")]:
+        if col_flag in df.columns:
+            df[col_flag] = (
+                df[col_flag].astype(str).str.strip().str.lower()
+                .map({"true": True, "false": False})
+            )
+            df[col_flag] = df[col_flag].fillna(df[fallback].notna())
+        else:
+            df[col_flag] = df[fallback].notna()
 
-        df["Actually Completed"] = df["Actually Completed"].fillna(
-            df["Actual Finish"].notna()
-        )
-    else:
-        df["Actually Completed"] = df["Actual Finish"].notna()
+    df["StartVarianceDays"]  = (df["Actual Start"]  - df["Planned Start"]).dt.days
+    df["FinishVarianceDays"] = (df["Actual Finish"] - df["Planned Finish"]).dt.days
 
-    if "Planned Completed" in df.columns:
-        df["Planned Completed"] = (
-            df["Planned Completed"]
-            .astype(str)
-            .str.strip()
-            .str.lower()
-            .map({"true": True, "false": False})
-        )
-
-        df["Planned Completed"] = df["Planned Completed"].fillna(
-            df["Planned Finish"].notna()
-        )
-    else:
-        df["Planned Completed"] = df["Planned Finish"].notna()
-
-    df["StartVarianceDays"] = (
-        df["Actual Start"] - df["Planned Start"]
-    ).dt.days
-
-    df["FinishVarianceDays"] = (
-        df["Actual Finish"] - df["Planned Finish"]
-    ).dt.days
-
-    if "Wave" not in df.columns:
-        df["Wave"] = "No Wave Found"
-
-    if "Module" not in df.columns:
-        df["Module"] = "No Module Found"
-
+    if "Wave"   not in df.columns: df["Wave"]   = "No Wave"
+    if "Module" not in df.columns: df["Module"] = "No Module"
     return df
 
 
 def calculate_metrics(df):
-    total_records = len(df)
+    total     = len(df)
     completed = df["Actually Completed"].eq(True).sum()
-    incomplete = df["Actually Completed"].eq(False).sum()
-    planned_completed = df["Planned Completed"].eq(True).sum()
-
-    completion_rate = completed / total_records if total_records > 0 else 0
-
-    finish_variance_sum = 0
-    if "FinishVarianceDays" in df.columns:
-        finish_variance_sum = df["FinishVarianceDays"].sum(skipna=True)
-
-    return total_records, completed, incomplete, planned_completed, completion_rate, finish_variance_sum
+    remaining = df["Actually Completed"].eq(False).sum()
+    planned   = df["Planned Completed"].eq(True).sum()
+    rate      = completed / total if total > 0 else 0
+    variance  = df["FinishVarianceDays"].sum(skipna=True) if "FinishVarianceDays" in df.columns else 0
+    return total, completed, remaining, planned, rate, variance
 
 
+# ─────────────────────────────────────────
+# GANTT BUILDER  (definitive vline fix)
+# ─────────────────────────────────────────
+def build_gantt(df, group_col="Wave", max_rows=50):
+    """
+    Paired Planned/Actual bars on separate y-rows.
+
+    add_vline FIX: Plotly's timeline x-axis is milliseconds since epoch.
+    We must pass x as an integer (ms) — NOT a string, NOT a pd.Timestamp.
+    Passing a string causes the 'int + str' TypeError seen in newer plotly builds.
+    """
+    gdf = df[df["Planned Start"].notna() & df["Planned Finish"].notna()].copy()
+    if gdf.empty:
+        return None
+    gdf = gdf.head(max_rows).reset_index(drop=True)
+
+    rows = []
+    for i, (_, r) in enumerate(gdf.iterrows()):
+        name   = str(r["Task Name"])[:55]
+        status = str(r.get("Filing Status", ""))
+        grp    = str(r.get(group_col, ""))
+
+        rows.append({
+            "y_key":  f"{i:04d}_P",
+            "Label":  name,
+            "Type":   "Planned",
+            "Start":  r["Planned Start"],
+            "Finish": r["Planned Finish"],
+            "Hover":  (f"<b>{name}</b><br>"
+                       f"Planned: {r['Planned Start'].strftime('%d %b %Y')} → "
+                       f"{r['Planned Finish'].strftime('%d %b %Y')}<br>"
+                       f"Status: {status} | {group_col}: {grp}"),
+        })
+
+        if pd.notna(r.get("Actual Start")) and pd.notna(r.get("Actual Finish")):
+            rows.append({
+                "y_key":  f"{i:04d}_A",
+                "Label":  name,
+                "Type":   "Actual",
+                "Start":  r["Actual Start"],
+                "Finish": r["Actual Finish"],
+                "Hover":  (f"<b>{name}</b><br>"
+                           f"Actual: {r['Actual Start'].strftime('%d %b %Y')} → "
+                           f"{r['Actual Finish'].strftime('%d %b %Y')}<br>"
+                           f"Status: {status} | {group_col}: {grp}"),
+            })
+
+    if not rows:
+        return None
+
+    plot_df = pd.DataFrame(rows).sort_values("y_key").reset_index(drop=True)
+    fig = px.timeline(
+        plot_df,
+        x_start="Start", x_end="Finish",
+        y="y_key", color="Type",
+        color_discrete_map={"Planned": MERCK_BLUE_MID, "Actual": MERCK_TEAL_LIGHT},
+        custom_data=["Hover"],
+    )
+    fig.update_traces(hovertemplate="%{customdata[0]}<extra></extra>")
+
+    tick_vals  = plot_df["y_key"].tolist()
+    tick_texts = [r["Label"] if r["Type"] == "Planned" else "  ↳ actual"
+                  for _, r in plot_df.iterrows()]
+
+    # ── DEFINITIVE FIX ──────────────────────────────────────────────────────
+    # px.timeline sets x-axis type to "date", so add_vline must receive the
+    # x value as an integer number of milliseconds since the Unix epoch.
+    # Using a string triggers "unsupported operand type(s) for +: 'int' and 'str'".
+    today_ms = int(pd.Timestamp(datetime.now().date()).timestamp() * 1000)
+    fig.add_vline(
+        x=today_ms,
+        line=dict(color=MERCK_RED, width=1.5, dash="dash"),
+        annotation_text="Today",
+        annotation_font_color=MERCK_RED,
+        annotation_position="top right",
+    )
+    # ────────────────────────────────────────────────────────────────────────
+
+    fig.update_layout(
+        plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(color=MERCK_BLUE, size=10),
+        legend=dict(title="Schedule Type", orientation="h",
+                    yanchor="bottom", y=1.01, xanchor="right", x=1,
+                    bgcolor="rgba(255,255,255,0.85)",
+                    bordercolor=MERCK_GRAY, borderwidth=1),
+        height=max(400, len(plot_df) * 22 + 160),
+        xaxis=dict(showgrid=True, gridcolor="#E8ECEC", tickformat="%b %Y", title="Date"),
+        yaxis=dict(autorange="reversed", showgrid=False,
+                   tickmode="array", tickvals=tick_vals,
+                   ticktext=tick_texts, tickfont=dict(size=10)),
+        margin=dict(l=10, r=30, t=70, b=30),
+        bargap=0.15,
+        hoverlabel=dict(bgcolor="white", bordercolor=MERCK_GRAY, font_size=12),
+    )
+    return fig
+
+
+# ─────────────────────────────────────────
+# WAVE / MODULE SUMMARIES
+# ─────────────────────────────────────────
 def get_wave_summary(df):
-    wave_summary = df.groupby("Wave").agg(
-        Total_Records=("Task Name", "count"),
-        Actually_Completed_Count=("Actually Completed", lambda x: x.eq(True).sum()),
-        Incomplete_Count=("Actually Completed", lambda x: x.eq(False).sum()),
-        Planned_Completed_Count=("Planned Completed", lambda x: x.eq(True).sum())
+    ws = df.groupby("Wave").agg(
+        Total=("Task Name", "count"),
+        Completed=("Actually Completed", lambda x: x.eq(True).sum()),
+        Remaining=("Actually Completed", lambda x: x.eq(False).sum()),
+        Planned=("Planned Completed",   lambda x: x.eq(True).sum()),
     ).reset_index()
-
-    wave_summary["Completion_Rate"] = (
-        wave_summary["Actually_Completed_Count"] /
-        wave_summary["Total_Records"] * 100
-    )
-
-    wave_summary["Actual_Percent"] = (
-        wave_summary["Actually_Completed_Count"] /
-        wave_summary["Planned_Completed_Count"] * 100
-    ).fillna(0)
-
-    wave_summary["Actual_Percent"] = wave_summary["Actual_Percent"].clip(upper=100)
-    wave_summary["Planned_Remaining_Percent"] = 100 - wave_summary["Actual_Percent"]
-
-    return wave_summary
-
-
-def get_module_summary(df):
-    module_summary = df.groupby("Module").agg(
-        Total_Records=("Task Name", "count"),
-        Actually_Completed_Count=("Actually Completed", lambda x: x.eq(True).sum()),
-        Incomplete_Count=("Actually Completed", lambda x: x.eq(False).sum()),
-        Planned_Completed_Count=("Planned Completed", lambda x: x.eq(True).sum())
-    ).reset_index()
-
-    module_summary["Completion_Rate"] = (
-        module_summary["Actually_Completed_Count"] /
-        module_summary["Total_Records"] * 100
-    )
-
-    return module_summary
-
-
-def require_upload():
-    if st.session_state.uploaded_data is None:
-        st.warning("Please upload an Excel file first from the Upload Excel page.")
-        return False
-    return True
-
-
-# -------------------------
-# SIDEBAR
-# -------------------------
-st.sidebar.title("Navigation")
-
-page = st.sidebar.radio(
-    "Go to",
-    [
-        "Upload Excel",
-        "Rolling Wave View",
-        "Rolling Progress View",
-        "Drill-Through Component Detail",
-        "Non-Rolling Module View",
-        "Anchor Dates"
-    ]
-)
-
-# -------------------------
-# UPLOAD EXCEL PAGE
-# -------------------------
-if page == "Upload Excel":
-    st.title("Upload Excel File")
-    st.write("Upload the rolling or non-rolling Excel file for processing.")
-
-    uploaded_file = st.file_uploader(
-        "Choose an Excel file",
-        type=["xlsx", "xls"]
-    )
-
-    if uploaded_file is not None:
-        try:
-            file_name = uploaded_file.name.lower()
-
-            if "non" in file_name:
-                st.session_state.file_type = "Non-Rolling"
-            elif "rolling" in file_name:
-                st.session_state.file_type = "Rolling"
-            else:
-                st.session_state.file_type = "Unknown"
-
-            excel_file = pd.ExcelFile(uploaded_file)
-            sheet_names = excel_file.sheet_names
-
-            st.success("File uploaded successfully.")
-            st.write("Sheets found:", sheet_names)
-            st.write("Detected file type:", st.session_state.file_type)
-
-            selected_sheet = st.selectbox("Select sheet", sheet_names)
-
-            df = read_submission_excel(uploaded_file, selected_sheet)
-            df = clean_submission_data(df)
-
-            st.session_state.uploaded_data = df
-
-            st.subheader("Preview")
-            st.dataframe(df, use_container_width=True)
-
-            st.subheader("Detected Columns")
-            st.write(list(df.columns))
-
-            total, completed, incomplete, planned_completed, completion_rate, finish_variance_sum = calculate_metrics(df)
-
-            st.subheader("Validation Metrics")
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total Records", total)
-            c2.metric("Completed", completed)
-            c3.metric("Incomplete", incomplete)
-            c4.metric("Completion Rate", f"{completion_rate:.2%}")
-
-        except Exception as e:
-            st.error(f"Error reading Excel file: {e}")
-
-# -------------------------
-# ROLLING WAVE VIEW
-# -------------------------
-elif page == "Rolling Wave View":
-    st.title("Rolling Submission – Wave View")
-
-    if require_upload():
-        df = st.session_state.uploaded_data
-
-        if "Wave" not in df.columns:
-            st.error("The uploaded file does not contain a Wave column.")
-        else:
-            wave_summary = get_wave_summary(df)
-
-            st.subheader("Wave Summary")
-            st.dataframe(
-                wave_summary[
-                    [
-                        "Wave",
-                        "Actually_Completed_Count",
-                        "Incomplete_Count",
-                        "Planned_Completed_Count",
-                        "Total_Records",
-                        "Completion_Rate"
-                    ]
-                ],
-                use_container_width=True,
-                hide_index=True
-            )
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                fig_completion = px.bar(
-                    wave_summary,
-                    x="Wave",
-                    y="Completion_Rate",
-                    title="Completion Rate by Wave",
-                    text="Completion_Rate"
-                )
-                fig_completion.update_traces(
-                    texttemplate="%{text:.2f}%",
-                    textposition="outside"
-                )
-                fig_completion.update_layout(
-                    yaxis_title="Completion Rate (%)",
-                    xaxis_title="Wave",
-                    yaxis_range=[0, 100]
-                )
-                st.plotly_chart(fig_completion, use_container_width=True)
-
-            with col2:
-                fig_incomplete = px.bar(
-                    wave_summary,
-                    x="Wave",
-                    y="Incomplete_Count",
-                    title="Incomplete Documents by Wave",
-                    text="Incomplete_Count"
-                )
-                fig_incomplete.update_layout(
-                    yaxis_title="Incomplete Count",
-                    xaxis_title="Wave"
-                )
-                st.plotly_chart(fig_incomplete, use_container_width=True)
-
-            percent_df = wave_summary.melt(
-                id_vars="Wave",
-                value_vars=[
-                    "Actual_Percent",
-                    "Planned_Remaining_Percent"
-                ],
-                var_name="Completion Type",
-                value_name="Percent"
-            )
-
-            fig_planned_actual = px.bar(
-                percent_df,
-                y="Wave",
-                x="Percent",
-                color="Completion Type",
-                orientation="h",
-                title="Actually Completed Count and Planned Completed Count by Wave",
-                barmode="stack"
-            )
-
-            fig_planned_actual.update_layout(
-                xaxis_title="Actually Completed Count and Planned Completed Count",
-                yaxis_title="Wave",
-                xaxis_range=[0, 100]
-            )
-
-            st.plotly_chart(fig_planned_actual, use_container_width=True)
-
-# -------------------------
-# ROLLING PROGRESS VIEW
-# -------------------------
-elif page == "Rolling Progress View":
-    st.title("Rolling Submission – Progress View")
-
-    if require_upload():
-        df = st.session_state.uploaded_data
-
-        total, completed, incomplete, planned_completed, completion_rate, finish_variance_sum = calculate_metrics(df)
-
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Completed Documents", completed)
-        col2.metric("Total Documents", total)
-        col3.metric("Remaining Documents", incomplete)
-        col4.metric("Avg Finish Variance (Days)", f"{finish_variance_sum:,.0f}")
-
-        st.divider()
-
-        col_a, col_b = st.columns(2)
-
-        with col_a:
-            if "Filing Status" in df.columns:
-                status_df = (
-                    df["Filing Status"]
-                    .fillna("Unknown")
-                    .value_counts()
-                    .reset_index()
-                )
-                status_df.columns = ["Filing Status", "Count"]
-
-                fig_donut = px.pie(
-                    status_df,
-                    names="Filing Status",
-                    values="Count",
-                    hole=0.45,
-                    title="Document Status Breakdown"
-                )
-                st.plotly_chart(fig_donut, use_container_width=True)
-            else:
-                st.warning("Filing Status column not found.")
-
-        with col_b:
-            fig_gauge = go.Figure(
-                go.Indicator(
-                    mode="gauge+number",
-                    value=completion_rate * 100,
-                    number={"suffix": "%", "valueformat": ".2f"},
-                    title={"text": "Overall Completion Rate"},
-                    gauge={
-                        "axis": {"range": [0, 100]},
-                        "bar": {"color": "#4285F4"}
-                    }
-                )
-            )
-            st.plotly_chart(fig_gauge, use_container_width=True)
-
-        if "Wave" in df.columns:
-            wave_summary = get_wave_summary(df)
-
-            percent_df = wave_summary.melt(
-                id_vars="Wave",
-                value_vars=[
-                    "Planned_Remaining_Percent",
-                    "Actual_Percent"
-                ],
-                var_name="Progress Type",
-                value_name="Percent"
-            )
-
-            fig_progress = px.bar(
-                percent_df,
-                x="Wave",
-                y="Percent",
-                color="Progress Type",
-                title="Expected vs Actual Progress by Wave",
-                barmode="stack"
-            )
-
-            fig_progress.update_layout(
-                yaxis_title="Planned Completed Count and Actually Completed Count",
-                xaxis_title="Wave",
-                yaxis_range=[0, 100]
-            )
-
-            st.plotly_chart(fig_progress, use_container_width=True)
-
-# -------------------------
-# DRILL-THROUGH COMPONENT DETAIL
-# -------------------------
-elif page == "Drill-Through Component Detail":
-    st.title("Drill-Through – Component Detail")
-
-    if require_upload():
-        df = st.session_state.uploaded_data
-
-        if "Wave" in df.columns:
-            selected_wave = st.selectbox(
-                "Select Wave",
-                sorted(df["Wave"].dropna().unique())
-            )
-            drill_df = df[df["Wave"] == selected_wave]
-        else:
-            drill_df = df
-
-        display_cols = [
-            "Task Name",
-            "Wave",
-            "Actual Finish",
-            "Actual Start",
-            "Filing Status"
-        ]
-
-        display_cols = [col for col in display_cols if col in drill_df.columns]
-
-        st.subheader("Component-Level Details")
-        st.dataframe(
-            drill_df[display_cols],
-            use_container_width=True,
-            hide_index=True
-        )
-
-        csv = drill_df[display_cols].to_csv(index=False).encode("utf-8")
-
-        st.download_button(
-            "Download Drill-Through Data",
-            data=csv,
-            file_name="drill_through_component_detail.csv",
-            mime="text/csv"
-        )
-
-# -------------------------
-# NON-ROLLING MODULE VIEW
-# -------------------------
-elif page == "Non-Rolling Module View":
-    st.title("Non-Rolling Submission – Module View")
-
-    if require_upload():
-        df = st.session_state.uploaded_data
-
-        if "Module" not in df.columns:
-            st.error("The uploaded file does not contain a Module column.")
-        else:
-            module_summary = get_module_summary(df)
-
-            st.subheader("Module Summary")
-
-            st.dataframe(
-                module_summary[
-                    [
-                        "Module",
-                        "Actually_Completed_Count",
-                        "Incomplete_Count",
-                        "Planned_Completed_Count",
-                        "Total_Records",
-                        "Completion_Rate"
-                    ]
-                ],
-                use_container_width=True,
-                hide_index=True
-            )
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                fig_module_completion = px.bar(
-                    module_summary,
-                    x="Module",
-                    y="Completion_Rate",
-                    title="Completion Rate by Module",
-                    text="Completion_Rate"
-                )
-                fig_module_completion.update_traces(
-                    texttemplate="%{text:.2f}%",
-                    textposition="outside"
-                )
-                fig_module_completion.update_layout(
-                    yaxis_title="Completion Rate (%)",
-                    xaxis_title="Module",
-                    yaxis_range=[0, 100]
-                )
-                st.plotly_chart(fig_module_completion, use_container_width=True)
-
-            with col2:
-                fig_module_incomplete = px.bar(
-                    module_summary,
-                    x="Module",
-                    y="Incomplete_Count",
-                    title="Incomplete Documents by Module",
-                    text="Incomplete_Count"
-                )
-                fig_module_incomplete.update_layout(
-                    yaxis_title="Incomplete Count",
-                    xaxis_title="Module"
-                )
-                st.plotly_chart(fig_module_incomplete, use_container_width=True)
-
-            selected_module = st.selectbox(
-                "Select Module for Details",
-                sorted(df["Module"].dropna().unique())
-            )
-
-            module_detail = df[df["Module"] == selected_module]
-
-            display_cols = [
-                "Task Name",
-                "Module",
-                "Actual Finish",
-                "Actual Start",
-                "Filing Status"
-            ]
-
-            display_cols = [col for col in display_cols if col in module_detail.columns]
-
-            st.subheader("Module-Level Details")
-            st.dataframe(
-                module_detail[display_cols],
-                use_container_width=True,
-                hide_index=True
-            )
-
-# -------------------------
-# ANCHOR DATES PAGE
-# -------------------------
-elif page == "Anchor Dates":
-    st.title("Manual Anchor Dates Entry")
-    st.write("Add up to 18 anchor dates.")
-
-    with st.form("anchor_date_form"):
-        anchor_name = st.text_input("Anchor Date Name")
-        anchor_date = st.date_input("Date")
-        anchor_status = st.selectbox(
-            "Status",
-            ["Complete", "In Progress", "Not Started"]
-        )
-
-        submitted = st.form_submit_button("Add Anchor Date")
-
-        if submitted:
-            if len(st.session_state.anchor_dates) >= 18:
-                st.warning("You can only add up to 18 anchor dates.")
-            elif anchor_name.strip() == "":
-                st.warning("Anchor Date Name cannot be empty.")
-            else:
-                new_row = pd.DataFrame(
-                    [[anchor_name, anchor_date, anchor_status]],
-                    columns=["Anchor Date", "Date", "Status"]
-                )
-
-                st.session_state.anchor_dates = pd.concat(
-                    [st.session_state.anchor_dates, new_row],
-                    ignore_index=True
-                )
-
-                st.success("Anchor date added.")
-
-    st.subheader("Current Anchor Dates")
-
-    if not st.session_state.anchor_dates.empty:
-        st.dataframe(st.session_state.anchor_dates, use_container_width=True)
-
-        row_to_delete = st.selectbox(
-            "Select row to remove",
-            options=st.session_state.anchor_dates.index,
-            format_func=lambda x: f"Row {x + 1}: {st.session_state.anchor_dates.loc[x, 'Anchor Date']}"
-        )
-
-        if st.button("Remove Selected Anchor Date"):
-            st.session_state.anchor_dates = (
-                st.session_state.anchor_dates
-                .drop(row_to_delete)
-                .reset_index(drop=True)
-            )
-            st.success("Anchor date removed.")
-
-        csv = st.session_state.anchor_dates.to_csv(index=False).encode("utf-8")
-
-        st.download_button(
-            "Download Anchor Dates as CSV",
-            data=csv,
-            file_name="anchor_dates.csv",
-            mime="text/csv"
-        )
+    ws["Rate_%"]    = ws["Completed"] / ws["Total"] * 100
+    ws["Done_%"]    = (ws["Completed"] / ws["Planned"] * 100).fillna(0).clip(upper=100)
+    ws["Left_%"]    = 100 - ws["Done_%"]
+    return ws
+
+
+def compute_module_group(cid):
+    s = str(cid).strip() if pd.notna(cid) else ""
+    d = s.find(".")
+    return s[:d] if d > 0 else s
+
+def compute_module_sort(cid):
+    mg = compute_module_group(cid)
+    try:   return int(mg) if mg else None
+    except ValueError: return None
+
+def get_nonrolling_summary(df):
+    work = df.copy()
+    work["IsComplete"] = (
+        work["Filing Status"].astype(str).str.strip().str.lower() == "completed"
+    ).astype(int)
+    if "Component ID" in work.columns:
+        work["MG"] = work["Component ID"].apply(compute_module_group)
+        work["MS"] = work["Component ID"].apply(compute_module_sort)
     else:
-        st.info("No anchor dates added yet.")
+        work["MG"] = work.get("Module", pd.Series("", index=work.index))
+        work["MS"] = None
+    work = work[work["MG"].str.strip() != ""]
+    s = work.groupby("MG").agg(
+        Sort=("MS", "first"),
+        Total=("Task Name", "count"),
+        Completed=("IsComplete", "sum"),
+    ).reset_index().rename(columns={"MG": "Module Group"})
+    s["Remaining"]      = s["Total"] - s["Completed"]
+    s["Pct_Complete"]   = (s["Completed"] / s["Total"]).fillna(0)
+    s["Pct_Remaining"]  = 1 - s["Pct_Complete"]
+    return s.sort_values("Sort", na_position="last").reset_index(drop=True)
+
+
+# ─────────────────────────────────────────
+# SHARED CHART BLOCKS
+# ─────────────────────────────────────────
+def render_gauge(rate, title="Overall Completion Rate"):
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number+delta",
+        value=rate * 100,
+        number={"suffix": "%", "valueformat": ".1f", "font": {"size": 38, "color": MERCK_BLUE}},
+        delta={"reference": 80, "valueformat": ".1f", "suffix": "%"},
+        title={"text": title, "font": {"color": MERCK_BLUE, "size": 13}},
+        gauge={
+            "axis": {"range": [0, 100], "tickcolor": MERCK_GRAY},
+            "bar":  {"color": MERCK_TEAL},
+            "steps": [
+                {"range": [0,  50], "color": "#F5E8E8"},
+                {"range": [50, 80], "color": "#EAF4F3"},
+                {"range": [80, 100],"color": "#D0EDE9"},
+            ],
+            "threshold": {"line": {"color": MERCK_BLUE, "width": 2},
+                          "thickness": 0.80, "value": 80},
+        }
+    ))
+    fig.update_layout(paper_bgcolor="white", font=dict(color=MERCK_BLUE),
+                      height=270, margin=dict(t=40, b=10, l=20, r=20))
+    return fig
+
+
+def render_status_donut(df):
+    if "Filing Status" not in df.columns:
+        return None
+    sdf = df["Filing Status"].fillna("Unknown").value_counts().reset_index()
+    sdf.columns = ["Status", "Count"]
+    cmap = {"Completed": MERCK_TEAL, "Incomplete": MERCK_ORANGE,
+            "Unknown": MERCK_GRAY, "In Progress": MERCK_BLUE_MID}
+    fig = px.pie(sdf, names="Status", values="Count", hole=0.50,
+                 title="Document Status Breakdown",
+                 color="Status", color_discrete_map=cmap)
+    fig.update_traces(textinfo="label+percent", textfont_size=11)
+    fig.update_layout(paper_bgcolor="white", font=dict(color=MERCK_BLUE),
+                      height=270, margin=dict(t=40, b=10))
+    return fig
+
+
+def render_variance_bar(df):
+    if "FinishVarianceDays" not in df.columns:
+        return None
+    vdf = df[df["FinishVarianceDays"].notna()].copy()
+    if vdf.empty:
+        return None
+    vdf["Cat"] = vdf["FinishVarianceDays"].apply(
+        lambda v: "On Time / Early" if v <= 0 else ("1–7 Days Late" if v <= 7 else "7+ Days Late")
+    )
+    cc = vdf["Cat"].value_counts().reset_index()
+    cc.columns = ["Category", "Count"]
+    fig = px.bar(cc, x="Category", y="Count", color="Category", text="Count",
+                 color_discrete_map={"On Time / Early": MERCK_TEAL,
+                                     "1–7 Days Late":   MERCK_ORANGE,
+                                     "7+ Days Late":    MERCK_RED})
+    fig.update_traces(textposition="outside")
+    fig.update_layout(plot_bgcolor="white", paper_bgcolor="white",
+                      font=dict(color=MERCK_BLUE), showlegend=False,
+                      title="Task Finish Variance Breakdown")
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(gridcolor="#E8ECEC")
+    return fig
+
+
+def render_gantt_section(df, group_col):
+    fc1, fc2, fc3 = st.columns([2, 2, 1])
+    with fc1:
+        opts = sorted(df[group_col].dropna().unique().tolist()) if group_col in df.columns else []
+        choices = ["All"] + opts
+        sel = st.selectbox(f"Filter by {group_col}", choices, key=f"gantt_grp_{group_col}")
+        gdf = df if sel == "All" else df[df[group_col] == sel]
+
+    with fc2:
+        if "Filing Status" in df.columns:
+            sts = ["All"] + sorted(df["Filing Status"].dropna().unique().tolist())
+            sel_s = st.selectbox("Filter by Filing Status", sts, key=f"gantt_status_{group_col}")
+            if sel_s != "All":
+                gdf = gdf[gdf["Filing Status"] == sel_s]
+
+    with fc3:
+        max_rows = st.slider("Max tasks", 10, 200, 50, step=10, key=f"gantt_rows_{group_col}")
+
+    st.caption("🟦 Blue = Planned  |  🟩 Teal = Actual  |  🔴 Dashed = Today")
+
+    fig = build_gantt(gdf, group_col=group_col, max_rows=max_rows)
+    if fig is None:
+        st.warning("No tasks with valid Planned Start and Finish dates found.")
+    else:
+        st.plotly_chart(fig, use_container_width=True)
+
+    fig_v = render_variance_bar(gdf)
+    if fig_v:
+        st.markdown("---")
+        section_label("Schedule Variance Summary")
+        st.plotly_chart(fig_v, use_container_width=True)
+
+
+# ─────────────────────────────────────────
+# SIDEBAR  (minimal — just anchor dates nav)
+# ─────────────────────────────────────────
+with st.sidebar:
+    st.image(
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/9/93/"
+        "Merck_%26_Co.svg/200px-Merck_%26_Co.svg.png",
+        width=130,
+    )
+    st.markdown("---")
+    page = st.radio(
+        "",
+        ["📋 Submission Dashboard", "📌 Anchor Dates"],
+        label_visibility="collapsed",
+    )
+    st.markdown("---")
+
+    # Status badges
+    r_loaded  = st.session_state.rolling_data is not None
+    nr_loaded = st.session_state.nonrolling_data is not None
+    st.markdown(
+        f"<div style='font-size:0.75rem;'>"
+        f"{'✅' if r_loaded  else '⚪'} Rolling data "
+        f"{'(' + str(len(st.session_state.rolling_data)) + ' rows)' if r_loaded else ''}<br>"
+        f"{'✅' if nr_loaded else '⚪'} Non-Rolling data "
+        f"{'(' + str(len(st.session_state.nonrolling_data)) + ' rows)' if nr_loaded else ''}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"<div style='font-size:0.65rem; color:#C1C6C8; margin-top:10px;'>"
+        f"Report date: {datetime.now().strftime('%d %b %Y')}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MAIN PAGE – SUBMISSION DASHBOARD
+# ═══════════════════════════════════════════════════════════════════════════
+if page == "📋 Submission Dashboard":
+
+    page_header(
+        "📋 Submission Dashboard",
+        subtitle="Regulatory Filing Progress · Upper Management View",
+    )
+
+    # ── TOP-LEVEL TABS: Rolling  |  Non-Rolling ───────────────────────────
+    tab_rolling, tab_nonrolling = st.tabs(
+        ["🌊  Rolling Submission", "📦  Non-Rolling Submission"]
+    )
+
+    # ══════════════════════════════════════
+    # TAB 1 – ROLLING SUBMISSION
+    # ══════════════════════════════════════
+    with tab_rolling:
+
+        # ── Upload ────────────────────────────────────────────────────────
+        with st.expander("📂  Upload Rolling Submission File", expanded=st.session_state.rolling_data is None):
+            col_up, col_hint = st.columns([2, 1])
+            with col_up:
+                f = st.file_uploader("Rolling Excel file", type=["xlsx", "xls"],
+                                     key="rolling_uploader", label_visibility="collapsed")
+                if f is not None:
+                    try:
+                        xf    = pd.ExcelFile(f)
+                        sheet = st.selectbox("Select sheet", xf.sheet_names, key="r_sheet")
+                        df_r  = read_submission_excel(f, sheet)
+                        df_r  = clean_submission_data(df_r)
+                        st.session_state.rolling_data = df_r
+                        st.success(f"✅ Loaded **{f.name}** — {len(df_r):,} records")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+            with col_hint:
+                st.markdown("""
+                <div style='background:#f0f6f6;border-left:4px solid #00857C;
+                            border-radius:6px;padding:12px;font-size:0.82rem;color:#0C2340;'>
+                <b>Expected columns</b><br>
+                Task Name · Planned Start · Planned Finish<br>
+                Actual Start · Actual Finish · Filing Status<br>
+                Wave · Component ID
+                </div>""", unsafe_allow_html=True)
+
+        if st.session_state.rolling_data is not None:
+            df = st.session_state.rolling_data
+            total, completed, remaining, planned, rate, variance = calculate_metrics(df)
+
+            # ── Inner sub-tabs ────────────────────────────────────────────
+            st_r1, st_r2, st_r3, st_r4 = st.tabs([
+                "📊 Executive Summary",
+                "🌊 Wave Analysis",
+                "🔍 Component Drill-Through",
+                "📅 Gantt Chart",
+            ])
+
+            # ── R1: Executive Summary ─────────────────────────────────────
+            with st_r1:
+                section_label("Key Performance Indicators")
+                k1, k2, k3, k4, k5 = st.columns(5)
+                k1.metric("Total Documents",   f"{total:,}")
+                k2.metric("Completed",         f"{completed:,}")
+                k3.metric("Remaining",         f"{remaining:,}")
+                k4.metric("Completion Rate",   f"{rate:.1%}")
+                k5.metric("Σ Finish Variance", f"{variance:,.0f} days")
+
+                st.markdown("---")
+                cg, cd = st.columns(2)
+                with cg:
+                    st.plotly_chart(render_gauge(rate, "Overall Completion Rate"),
+                                    use_container_width=True)
+                with cd:
+                    fig_d = render_status_donut(df)
+                    if fig_d:
+                        st.plotly_chart(fig_d, use_container_width=True)
+
+                if "Wave" in df.columns:
+                    st.markdown("---")
+                    section_label("Progress by Wave")
+                    ws  = get_wave_summary(df)
+                    pct = ws.melt(id_vars="Wave", value_vars=["Done_%", "Left_%"],
+                                  var_name="Type", value_name="Pct")
+                    pct["Type"] = pct["Type"].map({"Done_%": "Completed", "Left_%": "Remaining"})
+                    fig_w = px.bar(pct, x="Wave", y="Pct", color="Type",
+                                   barmode="stack", text="Pct",
+                                   color_discrete_map={"Completed": MERCK_TEAL,
+                                                       "Remaining": MERCK_GRAY})
+                    fig_w.update_traces(texttemplate="%{text:.0f}%",
+                                        textposition="inside", textfont_color="white")
+                    fig_w.update_layout(yaxis_title="Percent (%)", xaxis_title="Wave",
+                                        yaxis_range=[0, 115],
+                                        plot_bgcolor="white", paper_bgcolor="white",
+                                        font=dict(color=MERCK_BLUE), height=360)
+                    fig_w.update_xaxes(showgrid=False)
+                    fig_w.update_yaxes(gridcolor="#E8ECEC")
+                    st.plotly_chart(fig_w, use_container_width=True)
+
+            # ── R2: Wave Analysis ─────────────────────────────────────────
+            with st_r2:
+                if "Wave" not in df.columns:
+                    st.error("No Wave column found.")
+                else:
+                    ws = get_wave_summary(df)
+                    section_label("Wave Summary Table")
+                    disp = ws[["Wave", "Total", "Completed", "Remaining", "Planned", "Rate_%"]].copy()
+                    disp["Rate_%"] = disp["Rate_%"].map("{:.1f}%".format)
+                    disp.columns   = ["Wave", "Total", "Completed", "Remaining",
+                                      "Planned Completed", "Completion Rate"]
+                    st.dataframe(disp, use_container_width=True, hide_index=True)
+
+                    st.markdown("---")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        fig_r = px.bar(ws, x="Wave", y="Rate_%",
+                                       title="Completion Rate by Wave (%)",
+                                       text="Rate_%",
+                                       color_discrete_sequence=[MERCK_TEAL])
+                        fig_r.update_traces(texttemplate="%{text:.1f}%",
+                                            textposition="outside")
+                        fig_r.update_layout(yaxis_title="Completion Rate (%)",
+                                            yaxis_range=[0, 120],
+                                            plot_bgcolor="white", paper_bgcolor="white",
+                                            font=dict(color=MERCK_BLUE))
+                        fig_r.update_xaxes(showgrid=False)
+                        fig_r.update_yaxes(gridcolor="#E8ECEC")
+                        st.plotly_chart(fig_r, use_container_width=True)
+                    with c2:
+                        fig_i = px.bar(ws, x="Wave", y="Remaining",
+                                       title="Remaining Documents by Wave",
+                                       text="Remaining",
+                                       color_discrete_sequence=[MERCK_ORANGE])
+                        fig_i.update_traces(texttemplate="%{text:,}",
+                                            textposition="outside")
+                        fig_i.update_layout(yaxis_title="Remaining",
+                                            plot_bgcolor="white", paper_bgcolor="white",
+                                            font=dict(color=MERCK_BLUE))
+                        fig_i.update_xaxes(showgrid=False)
+                        fig_i.update_yaxes(gridcolor="#E8ECEC")
+                        st.plotly_chart(fig_i, use_container_width=True)
+
+                    st.markdown("---")
+                    pct = ws.melt(id_vars="Wave", value_vars=["Done_%", "Left_%"],
+                                  var_name="Type", value_name="Pct")
+                    pct["Type"] = pct["Type"].map({"Done_%": "Completed", "Left_%": "Remaining"})
+                    fig_h = px.bar(pct, y="Wave", x="Pct", color="Type",
+                                   orientation="h", barmode="stack",
+                                   title="Completed vs Remaining by Wave (Horizontal)",
+                                   color_discrete_map={"Completed": MERCK_TEAL,
+                                                       "Remaining": MERCK_GRAY})
+                    fig_h.update_layout(xaxis_title="Percent (%)", yaxis_title="Wave",
+                                        xaxis_range=[0, 115],
+                                        plot_bgcolor="white", paper_bgcolor="white",
+                                        font=dict(color=MERCK_BLUE), height=360)
+                    fig_h.update_xaxes(showgrid=True, gridcolor="#E8ECEC")
+                    fig_h.update_yaxes(showgrid=False)
+                    st.plotly_chart(fig_h, use_container_width=True)
+
+            # ── R3: Component Drill-Through ───────────────────────────────
+            with st_r3:
+                cf1, cf2 = st.columns([2, 2])
+                with cf1:
+                    if "Wave" in df.columns:
+                        sel_w = st.selectbox("Select Wave",
+                                             sorted(df["Wave"].dropna().unique()),
+                                             key="r_drill_wave")
+                        ddf = df[df["Wave"] == sel_w]
+                    else:
+                        ddf = df
+                        st.info("No Wave column — showing all records.")
+                with cf2:
+                    search = st.text_input("🔎 Search Task Name", key="r_search")
+                    if search:
+                        ddf = ddf[ddf["Task Name"].astype(str)
+                                    .str.contains(search, case=False, na=False)]
+
+                if not ddf.empty:
+                    section_label("Wave Metrics")
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Total",     f"{len(ddf):,}")
+                    m2.metric("Completed", f"{ddf['Actually Completed'].eq(True).sum():,}")
+                    m3.metric("Remaining", f"{ddf['Actually Completed'].eq(False).sum():,}")
+
+                st.markdown("---")
+                dcols = ["Task Name", "Wave", "Filing Status",
+                         "Planned Start", "Planned Finish",
+                         "Actual Start",  "Actual Finish"]
+                dcols = [c for c in dcols if c in ddf.columns]
+                st.dataframe(ddf[dcols], use_container_width=True, hide_index=True)
+
+                csv = ddf[dcols].to_csv(index=False).encode()
+                st.download_button("⬇️ Download Detail",
+                                   data=csv, file_name="rolling_drill_through.csv",
+                                   mime="text/csv")
+
+            # ── R4: Gantt ─────────────────────────────────────────────────
+            with st_r4:
+                gcol = "Wave" if "Wave" in df.columns else "Module"
+                render_gantt_section(df, gcol)
+
+    # ══════════════════════════════════════
+    # TAB 2 – NON-ROLLING SUBMISSION
+    # ══════════════════════════════════════
+    with tab_nonrolling:
+
+        # ── Upload ────────────────────────────────────────────────────────
+        with st.expander("📂  Upload Non-Rolling Submission File",
+                         expanded=st.session_state.nonrolling_data is None):
+            col_up2, col_hint2 = st.columns([2, 1])
+            with col_up2:
+                f2 = st.file_uploader("Non-Rolling Excel file", type=["xlsx", "xls"],
+                                      key="nonrolling_uploader", label_visibility="collapsed")
+                if f2 is not None:
+                    try:
+                        xf2    = pd.ExcelFile(f2)
+                        sheet2 = st.selectbox("Select sheet", xf2.sheet_names, key="nr_sheet")
+                        df_nr  = read_submission_excel(f2, sheet2)
+                        df_nr  = clean_submission_data(df_nr)
+                        st.session_state.nonrolling_data = df_nr
+                        st.success(f"✅ Loaded **{f2.name}** — {len(df_nr):,} records")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+            with col_hint2:
+                st.markdown("""
+                <div style='background:#f0f6f6;border-left:4px solid #00857C;
+                            border-radius:6px;padding:12px;font-size:0.82rem;color:#0C2340;'>
+                <b>Expected columns</b><br>
+                Task Name · Planned Start · Planned Finish<br>
+                Actual Start · Actual Finish · Filing Status<br>
+                Module · Component ID (e.g. 1.3.4)
+                </div>""", unsafe_allow_html=True)
+
+        if st.session_state.nonrolling_data is not None:
+            df2 = st.session_state.nonrolling_data
+            total2, completed2, remaining2, planned2, rate2, variance2 = calculate_metrics(df2)
+            mod_sum = get_nonrolling_summary(df2)
+
+            st_nr1, st_nr2, st_nr3, st_nr4 = st.tabs([
+                "📊 Executive Summary",
+                "📦 Module Analysis",
+                "🔍 Module Drill-Down",
+                "📅 Gantt Chart",
+            ])
+
+            # ── NR1: Executive Summary ────────────────────────────────────
+            with st_nr1:
+                section_label("Key Performance Indicators")
+                pct_c  = completed2 / total2 if total2 > 0 else 0
+                pct_nc = 1 - pct_c
+                k1, k2, k3, k4, k5 = st.columns(5)
+                k1.metric("Total Documents",  f"{total2:,}")
+                k2.metric("Completed",        f"{completed2:,}")
+                k3.metric("Remaining",        f"{remaining2:,}")
+                k4.metric("% Complete",       f"{pct_c:.1%}")
+                k5.metric("% Not Complete",   f"{pct_nc:.1%}")
+
+                st.markdown("---")
+                cg2, cs2 = st.columns(2)
+                with cg2:
+                    st.plotly_chart(render_gauge(rate2, "Overall Module Completion"),
+                                    use_container_width=True)
+                with cs2:
+                    if not mod_sum.empty:
+                        stk = mod_sum.melt(
+                            id_vars="Module Group",
+                            value_vars=["Completed", "Remaining"],
+                            var_name="Status", value_name="Count"
+                        )
+                        fig_stk = px.bar(
+                            stk, x="Module Group", y="Count", color="Status",
+                            title="Completed vs Remaining by Module Group",
+                            barmode="stack",
+                            color_discrete_map={"Completed": MERCK_TEAL,
+                                                "Remaining": MERCK_ORANGE}
+                        )
+                        fig_stk.update_layout(
+                            plot_bgcolor="white", paper_bgcolor="white",
+                            font=dict(color=MERCK_BLUE), height=270,
+                            margin=dict(t=40, b=10)
+                        )
+                        fig_stk.update_xaxes(showgrid=False)
+                        fig_stk.update_yaxes(gridcolor="#E8ECEC")
+                        st.plotly_chart(fig_stk, use_container_width=True)
+
+            # ── NR2: Module Analysis ──────────────────────────────────────
+            with st_nr2:
+                if mod_sum.empty:
+                    st.error("Could not derive Module Groups. Check Component ID column.")
+                else:
+                    section_label("Module Group Summary Table")
+                    disp2 = mod_sum[["Module Group", "Total", "Completed",
+                                     "Remaining", "Pct_Complete", "Pct_Remaining"]].copy()
+                    disp2["Pct_Complete"]  = disp2["Pct_Complete"].map("{:.1%}".format)
+                    disp2["Pct_Remaining"] = disp2["Pct_Remaining"].map("{:.1%}".format)
+                    disp2.columns = ["Module Group", "Total", "Completed",
+                                     "Remaining", "% Complete", "% Not Complete"]
+                    st.dataframe(disp2, use_container_width=True, hide_index=True)
+
+                    st.markdown("---")
+                    c1n, c2n = st.columns(2)
+                    with c1n:
+                        fig_mp = px.bar(mod_sum, x="Module Group", y="Pct_Complete",
+                                        title="% Complete by Module Group",
+                                        text="Pct_Complete",
+                                        color_discrete_sequence=[MERCK_TEAL])
+                        fig_mp.update_traces(texttemplate="%{text:.1%}",
+                                             textposition="outside")
+                        fig_mp.update_layout(
+                            yaxis=dict(tickformat=".0%", range=[0, 1.25],
+                                       title="% Complete"),
+                            xaxis_title="Module Group",
+                            plot_bgcolor="white", paper_bgcolor="white",
+                            font=dict(color=MERCK_BLUE)
+                        )
+                        fig_mp.update_xaxes(showgrid=False)
+                        fig_mp.update_yaxes(gridcolor="#E8ECEC")
+                        st.plotly_chart(fig_mp, use_container_width=True)
+
+                    with c2n:
+                        pct2 = mod_sum.melt(
+                            id_vars="Module Group",
+                            value_vars=["Pct_Complete", "Pct_Remaining"],
+                            var_name="Metric", value_name="Value"
+                        )
+                        pct2["Metric"] = pct2["Metric"].map(
+                            {"Pct_Complete": "% Complete",
+                             "Pct_Remaining": "% Not Complete"}
+                        )
+                        fig_mg = px.bar(
+                            pct2, x="Module Group", y="Value", color="Metric",
+                            title="% Complete vs % Not Complete",
+                            barmode="group",
+                            color_discrete_map={"% Complete":     MERCK_TEAL,
+                                                "% Not Complete": MERCK_GRAY}
+                        )
+                        fig_mg.update_layout(
+                            yaxis=dict(tickformat=".0%", range=[0, 1.25],
+                                       title="Percent"),
+                            xaxis_title="Module Group",
+                            plot_bgcolor="white", paper_bgcolor="white",
+                            font=dict(color=MERCK_BLUE)
+                        )
+                        fig_mg.update_xaxes(showgrid=False)
+                        fig_mg.update_yaxes(gridcolor="#E8ECEC")
+                        st.plotly_chart(fig_mg, use_container_width=True)
+
+            # ── NR3: Module Drill-Down ────────────────────────────────────
+            with st_nr3:
+                if mod_sum.empty:
+                    st.error("No module data available.")
+                else:
+                    sel_mg = st.selectbox("Select Module Group",
+                                          mod_sum["Module Group"].tolist(),
+                                          key="nr_mg_select")
+
+                    det = df2.copy()
+                    if "Component ID" in det.columns:
+                        det["_mg"] = det["Component ID"].apply(compute_module_group)
+                        det = det[det["_mg"] == sel_mg]
+                    elif "Module" in det.columns:
+                        det = det[det["Module"].astype(str).str.startswith(sel_mg)]
+
+                    det["IsComplete"] = (
+                        det["Filing Status"].astype(str).str.strip().str.lower() == "completed"
+                    ).map({True: "✅ Yes", False: "❌ No"})
+
+                    section_label(f"Module Group {sel_mg} — Detail")
+                    d1, d2, d3 = st.columns(3)
+                    d1.metric("Total",     len(det))
+                    d2.metric("Completed", (det["IsComplete"] == "✅ Yes").sum())
+                    d3.metric("Remaining", (det["IsComplete"] == "❌ No").sum())
+
+                    dcols2 = ["Component ID", "Task Name", "Filing Status", "IsComplete",
+                              "Planned Start", "Planned Finish", "Actual Start", "Actual Finish"]
+                    dcols2 = [c for c in dcols2 if c in det.columns]
+                    st.dataframe(det[dcols2], use_container_width=True, hide_index=True)
+
+                    csv2 = det[dcols2].to_csv(index=False).encode()
+                    st.download_button("⬇️ Download Detail", data=csv2,
+                                       file_name=f"module_{sel_mg}_detail.csv",
+                                       mime="text/csv")
+
+            # ── NR4: Gantt ────────────────────────────────────────────────
+            with st_nr4:
+                gcol2 = "Module" if "Module" in df2.columns else "Wave"
+                render_gantt_section(df2, gcol2)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ANCHOR DATES PAGE
+# ═══════════════════════════════════════════════════════════════════════════
+elif page == "📌 Anchor Dates":
+    page_header("📌 Anchor Dates", subtitle="Manual milestone entry & tracking")
+
+    col_form, col_tbl = st.columns([1, 2])
+
+    with col_form:
+        section_label("Add New Milestone")
+        with st.form("anchor_form"):
+            aname  = st.text_input("Milestone Name")
+            adate  = st.date_input("Target Date")
+            astatus = st.selectbox("Status", ["Complete", "In Progress", "Not Started"])
+            sub    = st.form_submit_button("➕ Add")
+            if sub:
+                if len(st.session_state.anchor_dates) >= 18:
+                    st.warning("Maximum 18 anchor dates reached.")
+                elif not aname.strip():
+                    st.warning("Name cannot be empty.")
+                else:
+                    st.session_state.anchor_dates = pd.concat([
+                        st.session_state.anchor_dates,
+                        pd.DataFrame([[aname, adate, astatus]],
+                                     columns=["Anchor Date", "Date", "Status"])
+                    ], ignore_index=True)
+                    st.success("✅ Added.")
+
+    with col_tbl:
+        section_label("Current Anchor Dates")
+        if not st.session_state.anchor_dates.empty:
+            cmap_s = {"Complete":    MERCK_TEAL,
+                      "In Progress": MERCK_ORANGE,
+                      "Not Started": MERCK_GRAY}
+            styled = st.session_state.anchor_dates.style.applymap(
+                lambda v: f"color:{cmap_s.get(v,'black')};font-weight:bold;",
+                subset=["Status"]
+            )
+            st.dataframe(styled, use_container_width=True)
+
+            row_del = st.selectbox(
+                "Row to remove",
+                st.session_state.anchor_dates.index,
+                format_func=lambda x:
+                    f"Row {x+1}: {st.session_state.anchor_dates.loc[x,'Anchor Date']}"
+            )
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("🗑️ Remove Selected"):
+                    st.session_state.anchor_dates = (
+                        st.session_state.anchor_dates
+                        .drop(row_del).reset_index(drop=True)
+                    )
+                    st.success("Removed.")
+            with c2:
+                csv_a = st.session_state.anchor_dates.to_csv(index=False).encode()
+                st.download_button("⬇️ Export CSV", data=csv_a,
+                                   file_name="anchor_dates.csv", mime="text/csv")
+        else:
+            st.info("No anchor dates added yet.")
