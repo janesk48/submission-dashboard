@@ -22,43 +22,169 @@ if "anchor_dates" not in st.session_state:
 # -------------------------
 # HELPER FUNCTIONS
 # -------------------------
-def clean_submission_data(df):
-    df.columns = df.columns.str.strip()
+def read_submission_excel(uploaded_file, sheet_name):
+    raw = pd.read_excel(uploaded_file, sheet_name=sheet_name, header=None)
 
-    date_cols = [
+    header_row = None
+
+    for i, row in raw.iterrows():
+        row_text = row.astype(str).str.strip().str.lower().tolist()
+
+        if "task name" in row_text and (
+            "planned start" in row_text or "planned finish" in row_text
+        ):
+            header_row = i
+            break
+
+    if header_row is not None:
+        headers = raw.iloc[header_row].fillna("").astype(str).str.strip()
+
+        clean_headers = []
+        for idx, header in enumerate(headers):
+            if header == "" or header.lower() == "nan":
+                clean_headers.append(f"blank_col_{idx}")
+            else:
+                clean_headers.append(header)
+
+        df = raw.iloc[header_row + 1:].copy()
+        df.columns = clean_headers
+    else:
+        df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
+
+    df.columns = (
+        df.columns
+        .astype(str)
+        .str.strip()
+        .str.replace(r"\s+", " ", regex=True)
+    )
+
+    df = df.dropna(how="all")
+
+    rename_map = {}
+
+    for col in df.columns:
+        c = col.strip().lower()
+
+        if c == "actual start":
+            rename_map[col] = "Actual Start"
+        elif c == "actual finish":
+            rename_map[col] = "Actual Finish"
+        elif c == "planned start":
+            rename_map[col] = "Planned Start"
+        elif c == "planned finish":
+            rename_map[col] = "Planned Finish"
+        elif c == "task name":
+            rename_map[col] = "Task Name"
+        elif c == "component id":
+            rename_map[col] = "Component ID"
+        elif c == "component source":
+            rename_map[col] = "Component Source"
+        elif c == "filing status":
+            rename_map[col] = "Filing Status"
+        elif c == "task index":
+            rename_map[col] = "Task Index"
+        elif c == "wave":
+            rename_map[col] = "Wave"
+        elif c == "module":
+            rename_map[col] = "Module"
+
+    df = df.rename(columns=rename_map)
+
+    # Try to find Wave if missing
+    if "Wave" not in df.columns:
+        for col in df.columns:
+            if df[col].astype(str).str.contains("Rolling Submission|Wave", case=False, na=False).any():
+                df["Wave"] = df[col].ffill()
+                break
+
+    # Try to find Module if missing
+    if "Module" not in df.columns:
+        for col in df.columns:
+            if df[col].astype(str).str.contains("Module", case=False, na=False).any():
+                df["Module"] = df[col].ffill()
+                break
+
+    return df
+
+
+def clean_submission_data(df):
+    df.columns = df.columns.astype(str).str.strip()
+
+    required_cols = [
+        "Task Name",
         "Planned Start",
         "Actual Start",
         "Planned Finish",
         "Actual Finish"
     ]
 
-    for col in date_cols:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce")
+    missing = [col for col in required_cols if col not in df.columns]
 
-    # Power BI logic: Actually Completed = TRUE if Actual Finish exists
-    if "Actually Completed" not in df.columns:
+    if missing:
+        st.error(f"Missing required columns: {missing}")
+        st.write("Columns found:", list(df.columns))
+        st.stop()
+
+    # Keep only actual task rows
+    if "Component ID" in df.columns:
+        df = df[df["Component ID"].notna() & df["Task Name"].notna()]
+    else:
+        df = df[df["Task Name"].notna()]
+
+    for col in ["Planned Start", "Actual Start", "Planned Finish", "Actual Finish"]:
+        df[col] = pd.to_datetime(df[col], errors="coerce")
+
+    if "Filing Status" in df.columns:
+        df["Filing Status"] = df["Filing Status"].fillna("Incomplete")
+    else:
+        df["Filing Status"] = df["Actual Finish"].apply(
+            lambda x: "Completed" if pd.notna(x) else "Incomplete"
+        )
+
+    # Power BI logic
+    if "Actually Completed" in df.columns:
+        df["Actually Completed"] = (
+            df["Actually Completed"]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .map({"true": True, "false": False})
+        )
+
+        df["Actually Completed"] = df["Actually Completed"].fillna(
+            df["Actual Finish"].notna()
+        )
+    else:
         df["Actually Completed"] = df["Actual Finish"].notna()
-    else:
-        df["Actually Completed"] = df["Actually Completed"].fillna(False).astype(bool)
 
-    # Power BI logic: Planned Completed = TRUE if Planned Finish exists
-    if "Planned Finish" in df.columns:
+    if "Planned Completed" in df.columns:
+        df["Planned Completed"] = (
+            df["Planned Completed"]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .map({"true": True, "false": False})
+        )
+
+        df["Planned Completed"] = df["Planned Completed"].fillna(
+            df["Planned Finish"].notna()
+        )
+    else:
         df["Planned Completed"] = df["Planned Finish"].notna()
-    else:
-        df["Planned Completed"] = False
 
-    # Power BI DAX: StartVarianceDays = DATEDIFF([Planned Start], [Actual Start], DAY)
-    if "Planned Start" in df.columns and "Actual Start" in df.columns:
-        df["StartVarianceDays"] = (
-            df["Actual Start"] - df["Planned Start"]
-        ).dt.days
+    df["StartVarianceDays"] = (
+        df["Actual Start"] - df["Planned Start"]
+    ).dt.days
 
-    # Power BI DAX: FinishVarianceDays = DATEDIFF([Planned Finish], [Actual Finish], DAY)
-    if "Planned Finish" in df.columns and "Actual Finish" in df.columns:
-        df["FinishVarianceDays"] = (
-            df["Actual Finish"] - df["Planned Finish"]
-        ).dt.days
+    df["FinishVarianceDays"] = (
+        df["Actual Finish"] - df["Planned Finish"]
+    ).dt.days
+
+    if "Wave" not in df.columns:
+        df["Wave"] = "No Wave Found"
+
+    if "Module" not in df.columns:
+        df["Module"] = "No Module Found"
 
     return df
 
@@ -174,7 +300,7 @@ if page == "Upload Excel":
 
             selected_sheet = st.selectbox("Select sheet", sheet_names)
 
-            df = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
+            df = read_submission_excel(uploaded_file, selected_sheet)
             df = clean_submission_data(df)
 
             st.session_state.uploaded_data = df
@@ -184,6 +310,15 @@ if page == "Upload Excel":
 
             st.subheader("Detected Columns")
             st.write(list(df.columns))
+
+            total, completed, incomplete, planned_completed, completion_rate, finish_variance_sum = calculate_metrics(df)
+
+            st.subheader("Validation Metrics")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Total Records", total)
+            c2.metric("Completed", completed)
+            c3.metric("Incomplete", incomplete)
+            c4.metric("Completion Rate", f"{completion_rate:.2%}")
 
         except Exception as e:
             st.error(f"Error reading Excel file: {e}")
