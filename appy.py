@@ -360,20 +360,21 @@ def build_gantt(df, group_col="Wave", max_rows=50):
     # ────────────────────────────────────────────────────────────────────────
 
     fig.update_layout(
-        plot_bgcolor="white", paper_bgcolor="white",
-        font=dict(color=MERCK_BLUE, size=10),
+        plot_bgcolor="#111319", paper_bgcolor="#111319",
+        font=dict(color="#FFFFFF", size=12),
         legend=dict(title="Schedule Type", orientation="h",
-                    yanchor="bottom", y=1.01, xanchor="right", x=1,
-                    bgcolor="rgba(255,255,255,0.85)",
-                    bordercolor=MERCK_GRAY, borderwidth=1),
+                    yanchor="bottom", y=-0.25, xanchor="left", x=0,
+                    bgcolor="rgba(30,30,30,0.85)",
+                    bordercolor=MERCK_GRAY, borderwidth=1,
+                    font=dict(color="#FFFFFF")),
         height=max(400, len(plot_df) * 22 + 160),
-        xaxis=dict(showgrid=True, gridcolor="#E8ECEC", tickformat="%b %Y", title="Date"),
+        xaxis=dict(showgrid=True, gridcolor="#444851", tickformat="%b %Y", title="Date", color="#FFFFFF", title_font=dict(color="#FFFFFF")),
         yaxis=dict(autorange="reversed", showgrid=False,
                    tickmode="array", tickvals=tick_vals,
-                   ticktext=tick_texts, tickfont=dict(size=10)),
+                   ticktext=tick_texts, tickfont=dict(size=12, color="#FFFFFF")),
         margin=dict(l=10, r=30, t=70, b=30),
         bargap=0.15,
-        hoverlabel=dict(bgcolor="white", bordercolor=MERCK_GRAY, font_size=12),
+        hoverlabel=dict(bgcolor="#222", bordercolor=MERCK_GRAY, font_size=13, font_color="#FFF"),
     )
     return fig
 
@@ -434,23 +435,28 @@ def render_gauge(rate, title="Overall Completion Rate"):
     fig = go.Figure(go.Indicator(
         mode="gauge+number+delta",
         value=rate * 100,
-        number={"suffix": "%", "valueformat": ".1f", "font": {"size": 38, "color": MERCK_BLUE}},
-        delta={"reference": 80, "valueformat": ".1f", "suffix": "%"},
-        title={"text": title, "font": {"color": MERCK_BLUE, "size": 13}},
+        number={"suffix": "%", "valueformat": ".1f", "font": {"size": 54, "color": "#FFFFFF"}},
+        delta={"reference": 80, "valueformat": ".1f", "suffix": "%", "increasing": {"color": MERCK_TEAL_LIGHT}, "decreasing": {"color": MERCK_ORANGE}},
+        title={"text": title, "font": {"color": "#FFFFFF", "size": 20}},
         gauge={
-            "axis": {"range": [0, 100], "tickcolor": MERCK_GRAY},
+            "axis": {"range": [0, 100], "tickcolor": "#B0B6BA", "tickfont": {"color": "#FFFFFF", "size": 16}},
             "bar":  {"color": MERCK_TEAL},
             "steps": [
-                {"range": [0,  50], "color": "#F5E8E8"},
-                {"range": [50, 80], "color": "#EAF4F3"},
-                {"range": [80, 100],"color": "#D0EDE9"},
+                {"range": [0,  50], "color": "#23272E"},
+                {"range": [50, 80], "color": "#1B2A3A"},
+                {"range": [80, 100],"color": "#0C2340"},
             ],
-            "threshold": {"line": {"color": MERCK_BLUE, "width": 2},
-                          "thickness": 0.80, "value": 80},
+            "threshold": {"line": {"color": MERCK_ORANGE, "width": 4},
+                          "thickness": 0.95, "value": 80},
         }
     ))
-    fig.update_layout(paper_bgcolor="white", font=dict(color=MERCK_BLUE),
-                      height=270, margin=dict(t=40, b=10, l=20, r=20))
+    fig.update_layout(
+        paper_bgcolor="#111319",
+        plot_bgcolor="#111319",
+        font=dict(color="#FFFFFF", size=18),
+        height=320,
+        margin=dict(t=50, b=20, l=30, r=30)
+    )
     return fig
 
 
@@ -461,12 +467,17 @@ def render_status_donut(df):
     sdf.columns = ["Status", "Count"]
     cmap = {"Completed": MERCK_TEAL, "Incomplete": MERCK_ORANGE,
             "Unknown": MERCK_GRAY, "In Progress": MERCK_BLUE_MID}
-    fig = px.pie(sdf, names="Status", values="Count", hole=0.50,
+    fig = px.pie(sdf, names="Status", values="Count", hole=0.60,
                  title="Document Status Breakdown",
                  color="Status", color_discrete_map=cmap)
-    fig.update_traces(textinfo="label+percent", textfont_size=11)
-    fig.update_layout(paper_bgcolor="white", font=dict(color=MERCK_BLUE),
-                      height=270, margin=dict(t=40, b=10))
+    fig.update_traces(textinfo="label+percent", textfont_size=24,
+                      marker=dict(line=dict(color="#111319", width=4)),
+                      pull=[0.08 for _ in range(len(sdf))],
+                      textfont_color="#FFFFFF")
+    fig.update_layout(paper_bgcolor="#111319", plot_bgcolor="#111319",
+                      font=dict(color="#FFFFFF", size=20),
+                      legend=dict(font=dict(color="#FFFFFF", size=18)),
+                      height=340, margin=dict(t=60, b=30))
     return fig
 
 
@@ -485,12 +496,17 @@ def render_variance_bar(df):
                  color_discrete_map={"On Time / Early": MERCK_TEAL,
                                      "1–7 Days Late":   MERCK_ORANGE,
                                      "7+ Days Late":    MERCK_RED})
-    fig.update_traces(textposition="outside")
-    fig.update_layout(plot_bgcolor="white", paper_bgcolor="white",
-                      font=dict(color=MERCK_BLUE), showlegend=False,
-                      title="Task Finish Variance Breakdown")
-    fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(gridcolor="#E8ECEC")
+    fig.update_traces(textposition="outside",
+                      marker_line_color="#111319",
+                      marker_line_width=4,
+                      textfont_color="#FFFFFF",
+                      textfont_size=22)
+    fig.update_layout(plot_bgcolor="#111319", paper_bgcolor="#111319",
+                      font=dict(color="#FFFFFF", size=20), showlegend=False,
+                      title="Task Finish Variance Breakdown",
+                      height=360, margin=dict(t=70, b=40, l=50, r=50))
+    fig.update_xaxes(showgrid=False, tickfont=dict(color="#FFFFFF", size=18), title_font=dict(color="#FFFFFF", size=20))
+    fig.update_yaxes(gridcolor="#444851", tickfont=dict(color="#FFFFFF", size=18), title_font=dict(color="#FFFFFF", size=20))
     return fig
 
 
@@ -804,13 +820,13 @@ if page == "dashboard":
                                    color_discrete_map={"Completed": MERCK_TEAL,
                                                        "Remaining": MERCK_GRAY})
                     fig_w.update_traces(texttemplate="%{text:.0f}%",
-                                        textposition="inside", textfont_color="white")
+                                        textposition="inside", textfont_color="#FFFFFF")
                     fig_w.update_layout(yaxis_title="Percent (%)", xaxis_title="Wave",
                                         yaxis_range=[0, 115],
-                                        plot_bgcolor="white", paper_bgcolor="white",
-                                        font=dict(color=MERCK_BLUE), height=360)
-                    fig_w.update_xaxes(showgrid=False)
-                    fig_w.update_yaxes(gridcolor="#E8ECEC")
+                                        plot_bgcolor="#111319", paper_bgcolor="#111319",
+                                        font=dict(color="#FFFFFF"), height=360)
+                    fig_w.update_xaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                    fig_w.update_yaxes(gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
                     st.plotly_chart(fig_w, use_container_width=True)
 
             # ── R2: Wave Analysis ─────────────────────────────────────────
@@ -834,13 +850,13 @@ if page == "dashboard":
                                        text="Rate_%",
                                        color_discrete_sequence=[MERCK_TEAL])
                         fig_r.update_traces(texttemplate="%{text:.1f}%",
-                                            textposition="outside")
+                                            textposition="outside", textfont_color="#FFFFFF")
                         fig_r.update_layout(yaxis_title="Completion Rate (%)",
                                             yaxis_range=[0, 120],
-                                            plot_bgcolor="white", paper_bgcolor="white",
-                                            font=dict(color=MERCK_BLUE))
-                        fig_r.update_xaxes(showgrid=False)
-                        fig_r.update_yaxes(gridcolor="#E8ECEC")
+                                            plot_bgcolor="#111319", paper_bgcolor="#111319",
+                                            font=dict(color="#FFFFFF"))
+                        fig_r.update_xaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                        fig_r.update_yaxes(gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
                         st.plotly_chart(fig_r, use_container_width=True)
                     with c2:
                         fig_i = px.bar(ws, x="Wave", y="Remaining",
@@ -848,12 +864,12 @@ if page == "dashboard":
                                        text="Remaining",
                                        color_discrete_sequence=[MERCK_ORANGE])
                         fig_i.update_traces(texttemplate="%{text:,}",
-                                            textposition="outside")
+                                            textposition="outside", textfont_color="#FFFFFF")
                         fig_i.update_layout(yaxis_title="Remaining",
-                                            plot_bgcolor="white", paper_bgcolor="white",
-                                            font=dict(color=MERCK_BLUE))
-                        fig_i.update_xaxes(showgrid=False)
-                        fig_i.update_yaxes(gridcolor="#E8ECEC")
+                                            plot_bgcolor="#111319", paper_bgcolor="#111319",
+                                            font=dict(color="#FFFFFF"))
+                        fig_i.update_xaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                        fig_i.update_yaxes(gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
                         st.plotly_chart(fig_i, use_container_width=True)
 
                     st.markdown("---")
@@ -867,10 +883,10 @@ if page == "dashboard":
                                                        "Remaining": MERCK_GRAY})
                     fig_h.update_layout(xaxis_title="Percent (%)", yaxis_title="Wave",
                                         xaxis_range=[0, 115],
-                                        plot_bgcolor="white", paper_bgcolor="white",
-                                        font=dict(color=MERCK_BLUE), height=360)
-                    fig_h.update_xaxes(showgrid=True, gridcolor="#E8ECEC")
-                    fig_h.update_yaxes(showgrid=False)
+                                        plot_bgcolor="#111319", paper_bgcolor="#111319",
+                                        font=dict(color="#FFFFFF"), height=360)
+                    fig_h.update_xaxes(showgrid=True, gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                    fig_h.update_yaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
                     st.plotly_chart(fig_h, use_container_width=True)
 
             # ── R3: Component Drill-Through ───────────────────────────────
@@ -1017,12 +1033,12 @@ if page == "dashboard":
                                             "Remaining": MERCK_ORANGE}
                     )
                     fig_stk.update_layout(
-                        plot_bgcolor="white", paper_bgcolor="white",
-                        font=dict(color=MERCK_BLUE), height=270,
+                        plot_bgcolor="#111319", paper_bgcolor="#111319",
+                        font=dict(color="#FFFFFF"), height=270,
                         margin=dict(t=40, b=10)
                     )
-                    fig_stk.update_xaxes(showgrid=False)
-                    fig_stk.update_yaxes(gridcolor="#E8ECEC")
+                    fig_stk.update_xaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                    fig_stk.update_yaxes(gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
                     st.plotly_chart(fig_stk, use_container_width=True)
 
             # ── NR2: Module Analysis ──────────────────────────────────────
@@ -1050,13 +1066,13 @@ if page == "dashboard":
                                              textposition="outside")
                         fig_mp.update_layout(
                             yaxis=dict(tickformat=".0%", range=[0, 1.25],
-                                       title="% Complete"),
+                                       title="% Complete", color="#FFFFFF", title_font=dict(color="#FFFFFF")),
                             xaxis_title="Module Group",
-                            plot_bgcolor="white", paper_bgcolor="white",
-                            font=dict(color=MERCK_BLUE)
+                            plot_bgcolor="#111319", paper_bgcolor="#111319",
+                            font=dict(color="#FFFFFF")
                         )
-                        fig_mp.update_xaxes(showgrid=False)
-                        fig_mp.update_yaxes(gridcolor="#E8ECEC")
+                        fig_mp.update_xaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                        fig_mp.update_yaxes(gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
                         st.plotly_chart(fig_mp, use_container_width=True)
 
                     with c2n:
@@ -1078,13 +1094,13 @@ if page == "dashboard":
                         )
                         fig_mg.update_layout(
                             yaxis=dict(tickformat=".0%", range=[0, 1.25],
-                                       title="Percent"),
+                                       title="Percent", color="#FFFFFF", title_font=dict(color="#FFFFFF")),
                             xaxis_title="Module Group",
-                            plot_bgcolor="white", paper_bgcolor="white",
-                            font=dict(color=MERCK_BLUE)
+                            plot_bgcolor="#111319", paper_bgcolor="#111319",
+                            font=dict(color="#FFFFFF")
                         )
-                        fig_mg.update_xaxes(showgrid=False)
-                        fig_mg.update_yaxes(gridcolor="#E8ECEC")
+                        fig_mg.update_xaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                        fig_mg.update_yaxes(gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
                         st.plotly_chart(fig_mg, use_container_width=True)
 
             # ── NR3: Module Drill-Down ────────────────────────────────────
