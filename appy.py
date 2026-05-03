@@ -10,10 +10,7 @@ from datetime import datetime
 # ── Power BI report URLs — update these when report IDs change ──────────────
 # Rolling report (Wave View)
 POWER_BI_ROLLING_URL = (
-    "https://app.powerbi.com/reportEmbed"
-    "?reportId=008bc16e-ca99-48b9-9ad9-48dfe44bb8c0"
-    "&autoAuth=true"
-    "&ctid=17dcb00c-6941-4050-b69e-bd7eb8951712"
+    "https://app.powerbi.com/reportEmbed?reportId=00318922-4ae6-43d0-bda1-85f57cb45e0c&autoAuth=true&ctid=17dcb00c-6941-4050-b69e-bd7eb8951712"
 )
 # Non-Rolling report (Module View) — paste the correct reportId here
 POWER_BI_NONROLLING_URL = (
