@@ -1,8 +1,44 @@
 import streamlit as st
+import streamlit.components.v1 as components
+import os
+from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+
+# ── Power BI report URLs — update these when report IDs change ──────────────
+# Rolling report (Wave View)
+POWER_BI_ROLLING_URL = (
+    "https://app.powerbi.com/reportEmbed"
+    "?reportId=008bc16e-ca99-48b9-9ad9-48dfe44bb8c0"
+    "&autoAuth=true"
+    "&ctid=17dcb00c-6941-4050-b69e-bd7eb8951712"
+)
+# Non-Rolling report (Module View) — paste the correct reportId here
+POWER_BI_NONROLLING_URL = (
+    "https://app.powerbi.com/reportEmbed"
+    "?reportId=c59f925f-a912-4cc8-a90d-3df3599beed3"
+    "&autoAuth=true"
+    "&ctid=17dcb00c-6941-4050-b69e-bd7eb8951712"
+)
+
+POWER_BI_REPORTS = {
+    "🌊  Rolling Submission — Wave View":      POWER_BI_ROLLING_URL,
+    "📦  Non-Rolling Submission — Module View": POWER_BI_NONROLLING_URL,
+}
+
+# Power BI input file name used by the SharePoint/OneDrive workflow.
+POWERBI_INPUT_FILE_NAME = "Current_Input_File.xlsx"
+
+# Default full Excel path. Users can paste either:
+# 1) a folder path that contains Current_Input_File.xlsx, OR
+# 2) the full file path ending in Current_Input_File.xlsx.
+# Merck should change this one path after downloading the template.
+# It should point to THEIR local/synced copy of Current_Input_File.xlsx.
+# Example: r"C:\Users\john.doe\OneDrive - Merck\Documents\PowerBI_Input\Current_Input_File.xlsx"
+DEFAULT_POWERBI_FILE_PATH = r"C:\Users\<yourname>\OneDrive - <Company>\Documents\PowerBI_Input\Current_Input_File.xlsx"
+
 
 # ─────────────────────────────────────────
 # MERCK COLOR PALETTE
@@ -282,15 +318,12 @@ def calculate_metrics(df):
 
 
 # ─────────────────────────────────────────
-# GANTT BUILDER  (definitive vline fix)
+# GANTT BUILDER
 # ─────────────────────────────────────────
 def build_gantt(df, group_col="Wave", max_rows=50):
     """
     Paired Planned/Actual bars on separate y-rows.
-
-    add_vline FIX: Plotly's timeline x-axis is milliseconds since epoch.
-    We must pass x as an integer (ms) — NOT a string, NOT a pd.Timestamp.
-    Passing a string causes the 'int + str' TypeError seen in newer plotly builds.
+    vline fix: pass x as integer milliseconds since epoch.
     """
     gdf = df[df["Planned Start"].notna() & df["Planned Finish"].notna()].copy()
     if gdf.empty:
@@ -345,10 +378,7 @@ def build_gantt(df, group_col="Wave", max_rows=50):
     tick_texts = [r["Label"] if r["Type"] == "Planned" else "  ↳ actual"
                   for _, r in plot_df.iterrows()]
 
-    # ── DEFINITIVE FIX ──────────────────────────────────────────────────────
-    # px.timeline sets x-axis type to "date", so add_vline must receive the
-    # x value as an integer number of milliseconds since the Unix epoch.
-    # Using a string triggers "unsupported operand type(s) for +: 'int' and 'str'".
+    # Pass today as integer milliseconds — avoids int+str TypeError in newer Plotly
     today_ms = int(pd.Timestamp(datetime.now().date()).timestamp() * 1000)
     fig.add_vline(
         x=today_ms,
@@ -357,24 +387,22 @@ def build_gantt(df, group_col="Wave", max_rows=50):
         annotation_font_color=MERCK_RED,
         annotation_position="top right",
     )
-    # ────────────────────────────────────────────────────────────────────────
 
     fig.update_layout(
-        plot_bgcolor="#111319", paper_bgcolor="#111319",
-        font=dict(color="#FFFFFF", size=12),
+        plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(color=MERCK_BLUE, size=10),
         legend=dict(title="Schedule Type", orientation="h",
-                    yanchor="bottom", y=-0.25, xanchor="left", x=0,
-                    bgcolor="rgba(30,30,30,0.85)",
-                    bordercolor=MERCK_GRAY, borderwidth=1,
-                    font=dict(color="#FFFFFF")),
+                    yanchor="bottom", y=1.01, xanchor="right", x=1,
+                    bgcolor="rgba(255,255,255,0.85)",
+                    bordercolor=MERCK_GRAY, borderwidth=1),
         height=max(400, len(plot_df) * 22 + 160),
-        xaxis=dict(showgrid=True, gridcolor="#444851", tickformat="%b %Y", title="Date", color="#FFFFFF", title_font=dict(color="#FFFFFF")),
+        xaxis=dict(showgrid=True, gridcolor="#E8ECEC", tickformat="%b %Y", title="Date"),
         yaxis=dict(autorange="reversed", showgrid=False,
                    tickmode="array", tickvals=tick_vals,
-                   ticktext=tick_texts, tickfont=dict(size=12, color="#FFFFFF")),
+                   ticktext=tick_texts, tickfont=dict(size=10)),
         margin=dict(l=10, r=30, t=70, b=30),
         bargap=0.15,
-        hoverlabel=dict(bgcolor="#222", bordercolor=MERCK_GRAY, font_size=13, font_color="#FFF"),
+        hoverlabel=dict(bgcolor="white", bordercolor=MERCK_GRAY, font_size=12),
     )
     return fig
 
@@ -435,28 +463,23 @@ def render_gauge(rate, title="Overall Completion Rate"):
     fig = go.Figure(go.Indicator(
         mode="gauge+number+delta",
         value=rate * 100,
-        number={"suffix": "%", "valueformat": ".1f", "font": {"size": 54, "color": "#FFFFFF"}},
-        delta={"reference": 80, "valueformat": ".1f", "suffix": "%", "increasing": {"color": MERCK_TEAL_LIGHT}, "decreasing": {"color": MERCK_ORANGE}},
-        title={"text": title, "font": {"color": "#FFFFFF", "size": 20}},
+        number={"suffix": "%", "valueformat": ".1f", "font": {"size": 38, "color": MERCK_BLUE}},
+        delta={"reference": 80, "valueformat": ".1f", "suffix": "%"},
+        title={"text": title, "font": {"color": MERCK_BLUE, "size": 13}},
         gauge={
-            "axis": {"range": [0, 100], "tickcolor": "#B0B6BA", "tickfont": {"color": "#FFFFFF", "size": 16}},
+            "axis": {"range": [0, 100], "tickcolor": MERCK_GRAY},
             "bar":  {"color": MERCK_TEAL},
             "steps": [
-                {"range": [0,  50], "color": "#23272E"},
-                {"range": [50, 80], "color": "#1B2A3A"},
-                {"range": [80, 100],"color": "#0C2340"},
+                {"range": [0,  50], "color": "#F5E8E8"},
+                {"range": [50, 80], "color": "#EAF4F3"},
+                {"range": [80, 100],"color": "#D0EDE9"},
             ],
-            "threshold": {"line": {"color": MERCK_ORANGE, "width": 4},
-                          "thickness": 0.95, "value": 80},
+            "threshold": {"line": {"color": MERCK_BLUE, "width": 2},
+                          "thickness": 0.80, "value": 80},
         }
     ))
-    fig.update_layout(
-        paper_bgcolor="#111319",
-        plot_bgcolor="#111319",
-        font=dict(color="#FFFFFF", size=18),
-        height=320,
-        margin=dict(t=50, b=20, l=30, r=30)
-    )
+    fig.update_layout(paper_bgcolor="white", font=dict(color=MERCK_BLUE),
+                      height=270, margin=dict(t=40, b=10, l=20, r=20))
     return fig
 
 
@@ -467,17 +490,12 @@ def render_status_donut(df):
     sdf.columns = ["Status", "Count"]
     cmap = {"Completed": MERCK_TEAL, "Incomplete": MERCK_ORANGE,
             "Unknown": MERCK_GRAY, "In Progress": MERCK_BLUE_MID}
-    fig = px.pie(sdf, names="Status", values="Count", hole=0.60,
+    fig = px.pie(sdf, names="Status", values="Count", hole=0.50,
                  title="Document Status Breakdown",
                  color="Status", color_discrete_map=cmap)
-    fig.update_traces(textinfo="label+percent", textfont_size=24,
-                      marker=dict(line=dict(color="#111319", width=4)),
-                      pull=[0.08 for _ in range(len(sdf))],
-                      textfont_color="#FFFFFF")
-    fig.update_layout(paper_bgcolor="#111319", plot_bgcolor="#111319",
-                      font=dict(color="#FFFFFF", size=20),
-                      legend=dict(font=dict(color="#FFFFFF", size=18)),
-                      height=340, margin=dict(t=60, b=30))
+    fig.update_traces(textinfo="label+percent", textfont_size=11)
+    fig.update_layout(paper_bgcolor="white", font=dict(color=MERCK_BLUE),
+                      height=270, margin=dict(t=40, b=10))
     return fig
 
 
@@ -496,17 +514,12 @@ def render_variance_bar(df):
                  color_discrete_map={"On Time / Early": MERCK_TEAL,
                                      "1–7 Days Late":   MERCK_ORANGE,
                                      "7+ Days Late":    MERCK_RED})
-    fig.update_traces(textposition="outside",
-                      marker_line_color="#111319",
-                      marker_line_width=4,
-                      textfont_color="#FFFFFF",
-                      textfont_size=22)
-    fig.update_layout(plot_bgcolor="#111319", paper_bgcolor="#111319",
-                      font=dict(color="#FFFFFF", size=20), showlegend=False,
-                      title="Task Finish Variance Breakdown",
-                      height=360, margin=dict(t=70, b=40, l=50, r=50))
-    fig.update_xaxes(showgrid=False, tickfont=dict(color="#FFFFFF", size=18), title_font=dict(color="#FFFFFF", size=20))
-    fig.update_yaxes(gridcolor="#444851", tickfont=dict(color="#FFFFFF", size=18), title_font=dict(color="#FFFFFF", size=20))
+    fig.update_traces(textposition="outside")
+    fig.update_layout(plot_bgcolor="white", paper_bgcolor="white",
+                      font=dict(color=MERCK_BLUE), showlegend=False,
+                      title="Task Finish Variance Breakdown")
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(gridcolor="#E8ECEC")
     return fig
 
 
@@ -545,7 +558,7 @@ def render_gantt_section(df, group_col, tab_key=""):
 
 
 # ─────────────────────────────────────────
-# SIDEBAR  (minimal — just anchor dates nav)
+# SIDEBAR
 # ─────────────────────────────────────────
 with st.sidebar:
     st.markdown("""
@@ -592,31 +605,285 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-# ── Top-bar page navigation (replaces sidebar radio) ─────────────────────
-_nav_col1, _nav_col2, _nav_spacer = st.columns([2, 2, 6])
+# ── Top-bar page navigation ──────────────────────────────────────────────
+_nav_col1, _nav_col2, _nav_col3, _nav_col4 = st.columns([1.4, 2.0, 2.4, 1.6])
+_current_page = st.session_state.get("_page", "home")
+
 with _nav_col1:
+    if st.button("🏠  Home", use_container_width=True,
+                 type="primary" if _current_page == "home" else "secondary"):
+        st.session_state["_page"] = "home"
+        st.rerun()
+
+with _nav_col2:
+    if st.button("📊  Power BI View", use_container_width=True,
+                 type="primary" if _current_page == "powerbi" else "secondary"):
+        st.session_state["_page"] = "powerbi"
+        st.rerun()
+
+with _nav_col3:
     if st.button("📋  Submission Dashboard", use_container_width=True,
-                 type="primary" if st.session_state.get("_page", "dashboard") == "dashboard" else "secondary"):
+                 type="primary" if _current_page == "dashboard" else "secondary"):
         st.session_state["_page"] = "dashboard"
         st.rerun()
-with _nav_col2:
+
+with _nav_col4:
     if st.button("📌  Anchor Dates", use_container_width=True,
-                 type="primary" if st.session_state.get("_page", "dashboard") == "anchor" else "secondary"):
+                 type="primary" if _current_page == "anchor" else "secondary"):
         st.session_state["_page"] = "anchor"
         st.rerun()
 
-page = st.session_state.get("_page", "dashboard")
+page = st.session_state.get("_page", "home")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# MAIN PAGE – SUBMISSION DASHBOARD
+# HOME PAGE
 # ═══════════════════════════════════════════════════════════════════════════
-if page == "dashboard":
+if page == "home":
+    page_header("🏠 Submission Intelligence Dashboard", subtitle="Merck Regulatory Affairs · Home")
+
+    st.markdown("""
+    <style>
+    .lp-hero{background:linear-gradient(135deg,#0C2340 0%,#005587 55%,#00857C 100%);
+             border-radius:14px;padding:52px 44px 44px;margin-bottom:28px;position:relative;overflow:hidden;}
+    .lp-hero::after{content:"";position:absolute;bottom:-70px;left:-40px;width:220px;height:220px;
+                    border-radius:50%;background:rgba(0,133,124,0.15);}
+    .lp-title{font-size:2.4rem;font-weight:900;color:#fff;line-height:1.15;margin-bottom:10px;}
+    .lp-sub{font-size:0.75rem;color:#6ECEB2;font-weight:600;letter-spacing:0.12em;
+            text-transform:uppercase;margin-bottom:20px;}
+    .lp-desc{font-size:0.97rem;color:rgba(255,255,255,0.78);max-width:650px;line-height:1.65;}
+    .lp-pills{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:26px;}
+    .lp-pill{background:rgba(110,206,178,0.15);border:1px solid rgba(110,206,178,0.4);
+             color:#6ECEB2;border-radius:20px;padding:4px 14px;font-size:0.72rem;
+             font-weight:600;letter-spacing:0.06em;text-transform:uppercase;}
+    .lp-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:26px;}
+    .lp-card{background:white;border-radius:10px;padding:22px 20px;
+             border-top:4px solid #00857C;box-shadow:0 2px 10px rgba(12,35,64,0.07);}
+    .lp-card h4{color:#0C2340;font-size:0.9rem;font-weight:700;margin:8px 0 6px;}
+    .lp-card p{color:#5a6a7a;font-size:0.80rem;line-height:1.55;margin:0;}
+    </style>
+
+    <div class="lp-hero">
+        <div class="lp-sub">Merck · Regulatory Affairs</div>
+        <div class="lp-title">Submission<br>Intelligence Dashboard</div>
+        <div class="lp-pills">
+            <span class="lp-pill">Embedded Power BI</span>
+            <span class="lp-pill">Rolling Submissions</span>
+            <span class="lp-pill">Non-Rolling Module View</span>
+            <span class="lp-pill">Anchor Dates</span>
+            <span class="lp-pill">Regional · Central · Local</span>
+        </div>
+        <div class="lp-desc">
+            A unified regulatory filing tracker that combines the embedded Power BI report with Streamlit-based
+            upload, module analysis, Gantt tracking, drill-through tables, and milestone management.
+        </div>
+    </div>
+
+    <div class="lp-cards">
+        <div class="lp-card">
+            <div style="font-size:1.6rem;">📊</div>
+            <h4>Power BI Executive View</h4>
+            <p>Open the embedded Power BI report directly inside Streamlit for sponsor-facing dashboard review.</p>
+        </div>
+        <div class="lp-card">
+            <div style="font-size:1.6rem;">📦</div>
+            <h4>Non-Rolling Module View</h4>
+            <p>Upload the non-rolling file and review module-level completion, remaining documents, and drill-down rows.</p>
+        </div>
+        <div class="lp-card">
+            <div style="font-size:1.6rem;">🌊</div>
+            <h4>Rolling Wave View</h4>
+            <p>Upload the rolling file and monitor wave progress, document counts, status breakdowns, and timelines.</p>
+        </div>
+        <div class="lp-card">
+            <div style="font-size:1.6rem;">📅</div>
+            <h4>Gantt Charts</h4>
+            <p>Compare planned and actual dates with a Today marker and schedule variance summaries.</p>
+        </div>
+        <div class="lp-card">
+            <div style="font-size:1.6rem;">📌</div>
+            <h4>Anchor Date Manager</h4>
+            <p>Add milestones manually or import them from CSV or Excel, then export the anchor-date table.</p>
+        </div>
+        <div class="lp-card">
+            <div style="font-size:1.6rem;">⬇️</div>
+            <h4>Export and Drill-Through</h4>
+            <p>Download filtered module or wave details as CSV for offline reporting or sponsor validation.</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.info("Use the top navigation to open the embedded Power BI report, upload Rolling or Non-Rolling files, or manage Anchor Dates.")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# POWER BI PAGE
+# ═══════════════════════════════════════════════════════════════════════════
+elif page == "powerbi":
+    page_header("📊 Embedded Power BI Dashboard", subtitle="Executive dashboard view")
+
+    section_label("🔄 Update Power BI Input File")
+
+    with st.expander("🔄 Power BI Upload + Merck Setup", expanded=False):
+        st.markdown("""
+        <div style="background:#f7fbfb;border:1px solid #d9e8e6;border-radius:10px;padding:18px 20px;margin-bottom:16px;">
+            <div style="font-size:1.05rem;font-weight:700;color:#0C2340;margin-bottom:8px;">
+                Merck handoff setup
+            </div>
+            <div style="font-size:0.92rem;color:#34495e;line-height:1.65;">
+                <b>One-time setup:</b><br>
+                1. Download the Power BI template <code>.pbix</code> and sample <code>Current_Input_File.xlsx</code>.<br>
+                2. Save <code>Current_Input_File.xlsx</code> locally or in a company-synced folder.<br>
+                3. Paste that folder path or full file path below.<br>
+                4. In Power BI Desktop, go to <b>Transform Data → Data Source Settings</b> and point Power BI to the same <code>Current_Input_File.xlsx</code>.<br><br>
+                <b>Each update:</b><br>
+                1. Upload a new Excel file below.<br>
+                2. Click <b>Update Current_Input_File.xlsx</b>.<br>
+                3. Open Power BI Desktop and click <b>Refresh</b>.<br><br>
+                <b>Important:</b> the file name must stay <code>Current_Input_File.xlsx</code>. Streamlit overwrites this file, and Power BI reads the same file.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        default_path = st.session_state.get("powerbi_file_path", DEFAULT_POWERBI_FILE_PATH)
+
+        powerbi_path_text = st.text_input(
+            "📄 Local or synced Current_Input_File.xlsx path",
+            value=default_path,
+            help=(
+                "Paste either the folder path or the full Current_Input_File.xlsx path. "
+                "Example: C:/Users/name/OneDrive - Merck/Documents/PowerBI_Input/Current_Input_File.xlsx"
+            ),
+        )
+
+        st.session_state["powerbi_file_path"] = powerbi_path_text
+
+        powerbi_path = Path(powerbi_path_text.strip())
+
+        # If a folder is pasted instead of a full Excel file path, append Current_Input_File.xlsx.
+        if powerbi_path.suffix.lower() != ".xlsx":
+            powerbi_file_path = powerbi_path / POWERBI_INPUT_FILE_NAME
+        else:
+            powerbi_file_path = powerbi_path
+
+        parent_folder = powerbi_file_path.parent
+
+        st.caption(f"📍 Uploaded file will overwrite: `{powerbi_file_path}`")
+
+        status_col, file_col = st.columns([1, 2])
+        with status_col:
+            if parent_folder.exists():
+                st.success("✅ Folder found")
+            else:
+                st.error("❌ Folder not found")
+        with file_col:
+            st.info("Update the path above if this is not Merck's local or company-synced folder.")
+
+        uploaded_powerbi_file = st.file_uploader(
+            "Upload new Power BI input file (.xlsx)",
+            type=["xlsx"],
+            key="powerbi_input_upload",
+        )
+
+        if uploaded_powerbi_file is not None:
+            st.info(f"📄 Selected: **{uploaded_powerbi_file.name}**")
+
+            if st.button("🚀 Update Current_Input_File.xlsx", use_container_width=True):
+                try:
+                    if not parent_folder.exists():
+                        st.error("Cannot save because the folder path is invalid.")
+                    else:
+                        with open(powerbi_file_path, "wb") as f:
+                            f.write(uploaded_powerbi_file.getbuffer())
+
+                        st.session_state["pbi_last_update"] = datetime.now().strftime("%d %b %Y %H:%M:%S")
+
+                        st.success("✅ Current_Input_File.xlsx was replaced successfully.")
+                        st.info("Next step: open Power BI Desktop and click Refresh.")
+
+                except PermissionError:
+                    st.error("🔒 Permission denied. Close Excel and Power BI if they are using this file, then try again.")
+                except Exception as e:
+                    st.error(f"Error saving file: {e}")
+
+    st.markdown("---")
+
+    section_label("📋 Select Power BI Report")
+
+    report_names = list(POWER_BI_REPORTS.keys())
+
+    selected_report = st.radio(
+        "Which report do you want to view?",
+        report_names,
+        index=0,
+        horizontal=True,
+        key="pbi_report_selector",
+    )
+
+    with st.expander("🔗 Paste a custom Power BI report URL instead", expanded=False):
+        custom_url = st.text_input(
+            "Custom report URL",
+            value="",
+            placeholder="https://app.powerbi.com/reportEmbed?reportId=...",
+            help="Paste the Embed URL from Power BI → File → Embed report → Website or portal",
+        )
+        if custom_url.strip():
+            st.info("✅ Custom URL will be used instead of the selected report above.")
+
+    POWER_BI_URL = custom_url.strip() if custom_url.strip() else POWER_BI_REPORTS[selected_report]
+
+    st.markdown("---")
+
+    section_label("📊 Embedded Power BI Dashboard")
+
+    col_status, col_refresh = st.columns([2, 1])
+
+    with col_status:
+        last_update = st.session_state.get("pbi_last_update")
+        if last_update:
+            st.success(f"✅ Last file update: **{last_update}**")
+        else:
+            st.info("No file updated yet this session.")
+
+    with col_refresh:
+        if "pbi_iframe_key" not in st.session_state:
+            st.session_state["pbi_iframe_key"] = 0
+
+        if st.button("🔄 Reload Embedded Report", use_container_width=True):
+            st.session_state["pbi_iframe_key"] += 1
+            st.rerun()
+
+    iframe_version = st.session_state.get("pbi_iframe_key", 0)
+    sep = "&" if "?" in POWER_BI_URL else "?"
+    versioned_url = f"{POWER_BI_URL}{sep}_v={iframe_version}"
+
+    st.caption(
+        "Important: The embedded report updates only after the Power BI report/dataset has been refreshed or republished."
+    )
+
+    components.html(
+        f"""
+        <iframe
+            title="Power BI Dashboard"
+            width="100%"
+            height="850"
+            src="{versioned_url}"
+            frameborder="0"
+            allowFullScreen="true"
+            style="border-radius:8px;box-shadow:0 2px 12px rgba(12,35,64,0.12);">
+        </iframe>
+        """,
+        height=870,
+    )
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SUBMISSION DASHBOARD PAGE
+# ═══════════════════════════════════════════════════════════════════════════
+elif page == "dashboard":
 
     _r_loaded  = st.session_state.rolling_data is not None
     _nr_loaded = st.session_state.nonrolling_data is not None
 
-    # Show landing hero: full when no data, compact when data loaded
     _show_full_landing = not _r_loaded and not _nr_loaded
     with st.expander("ℹ️  About this Dashboard — click to expand/collapse", expanded=_show_full_landing):
         st.markdown("""
@@ -731,27 +998,25 @@ if page == "dashboard":
                 <p>Switch to Non-Rolling → upload, then filter by Component Source.</p></div></div>
             <div class="lp-step"><div class="lp-num">3</div>
                 <div><strong>Add Anchor Dates</strong>
-                <p>Go to 📌 Anchor Dates in the sidebar to enter milestones or import a CSV / Excel file.</p></div></div>
+                <p>Go to 📌 Anchor Dates in the top nav to enter milestones or import a CSV / Excel file.</p></div></div>
         </div>
         """, unsafe_allow_html=True)
 
     page_header(
         "📋 Submission Dashboard",
-        subtitle="Regulatory Filing Progress · Upper Management View",
+        subtitle="Rolling Wave View · Non-Rolling Module View · Streamlit Analysis",
     )
 
-    # ── TOP-LEVEL TABS: Rolling  |  Non-Rolling ───────────────────────────
     tab_rolling, tab_nonrolling = st.tabs(
-        ["🌊  Rolling Submission", "📦  Non-Rolling Submission"]
+        ["🌊  Rolling Submission", "📦  Non-Rolling Module View"]
     )
 
     # ══════════════════════════════════════
     # TAB 1 – ROLLING SUBMISSION
     # ══════════════════════════════════════
     with tab_rolling:
-
-        # ── Upload ────────────────────────────────────────────────────────
-        with st.expander("📂  Upload Rolling Submission File", expanded=st.session_state.rolling_data is None):
+        with st.expander("📂  Upload Rolling Submission File",
+                         expanded=st.session_state.rolling_data is None):
             col_up, col_hint = st.columns([2, 1])
             with col_up:
                 f = st.file_uploader("Rolling Excel file", type=["xlsx", "xls"],
@@ -780,7 +1045,6 @@ if page == "dashboard":
             df = st.session_state.rolling_data
             total, completed, remaining, planned, rate, variance = calculate_metrics(df)
 
-            # ── Inner sub-tabs ────────────────────────────────────────────
             st_r1, st_r2, st_r3, st_r4 = st.tabs([
                 "📊 Executive Summary",
                 "🌊 Wave Analysis",
@@ -788,7 +1052,6 @@ if page == "dashboard":
                 "📅 Gantt Chart",
             ])
 
-            # ── R1: Executive Summary ─────────────────────────────────────
             with st_r1:
                 section_label("Key Performance Indicators")
                 k1, k2, k3, k4, k5 = st.columns(5)
@@ -820,16 +1083,15 @@ if page == "dashboard":
                                    color_discrete_map={"Completed": MERCK_TEAL,
                                                        "Remaining": MERCK_GRAY})
                     fig_w.update_traces(texttemplate="%{text:.0f}%",
-                                        textposition="inside", textfont_color="#FFFFFF")
+                                        textposition="inside", textfont_color="white")
                     fig_w.update_layout(yaxis_title="Percent (%)", xaxis_title="Wave",
                                         yaxis_range=[0, 115],
-                                        plot_bgcolor="#111319", paper_bgcolor="#111319",
-                                        font=dict(color="#FFFFFF"), height=360)
-                    fig_w.update_xaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
-                    fig_w.update_yaxes(gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                                        plot_bgcolor="white", paper_bgcolor="white",
+                                        font=dict(color=MERCK_BLUE), height=360)
+                    fig_w.update_xaxes(showgrid=False)
+                    fig_w.update_yaxes(gridcolor="#E8ECEC")
                     st.plotly_chart(fig_w, use_container_width=True)
 
-            # ── R2: Wave Analysis ─────────────────────────────────────────
             with st_r2:
                 if "Wave" not in df.columns:
                     st.error("No Wave column found.")
@@ -849,27 +1111,24 @@ if page == "dashboard":
                                        title="Completion Rate by Wave (%)",
                                        text="Rate_%",
                                        color_discrete_sequence=[MERCK_TEAL])
-                        fig_r.update_traces(texttemplate="%{text:.1f}%",
-                                            textposition="outside", textfont_color="#FFFFFF")
-                        fig_r.update_layout(yaxis_title="Completion Rate (%)",
-                                            yaxis_range=[0, 120],
-                                            plot_bgcolor="#111319", paper_bgcolor="#111319",
-                                            font=dict(color="#FFFFFF"))
-                        fig_r.update_xaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
-                        fig_r.update_yaxes(gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                        fig_r.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+                        fig_r.update_layout(yaxis_title="Completion Rate (%)", yaxis_range=[0, 120],
+                                            plot_bgcolor="white", paper_bgcolor="white",
+                                            font=dict(color=MERCK_BLUE))
+                        fig_r.update_xaxes(showgrid=False)
+                        fig_r.update_yaxes(gridcolor="#E8ECEC")
                         st.plotly_chart(fig_r, use_container_width=True)
                     with c2:
                         fig_i = px.bar(ws, x="Wave", y="Remaining",
                                        title="Remaining Documents by Wave",
                                        text="Remaining",
                                        color_discrete_sequence=[MERCK_ORANGE])
-                        fig_i.update_traces(texttemplate="%{text:,}",
-                                            textposition="outside", textfont_color="#FFFFFF")
+                        fig_i.update_traces(texttemplate="%{text:,}", textposition="outside")
                         fig_i.update_layout(yaxis_title="Remaining",
-                                            plot_bgcolor="#111319", paper_bgcolor="#111319",
-                                            font=dict(color="#FFFFFF"))
-                        fig_i.update_xaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
-                        fig_i.update_yaxes(gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                                            plot_bgcolor="white", paper_bgcolor="white",
+                                            font=dict(color=MERCK_BLUE))
+                        fig_i.update_xaxes(showgrid=False)
+                        fig_i.update_yaxes(gridcolor="#E8ECEC")
                         st.plotly_chart(fig_i, use_container_width=True)
 
                     st.markdown("---")
@@ -883,13 +1142,12 @@ if page == "dashboard":
                                                        "Remaining": MERCK_GRAY})
                     fig_h.update_layout(xaxis_title="Percent (%)", yaxis_title="Wave",
                                         xaxis_range=[0, 115],
-                                        plot_bgcolor="#111319", paper_bgcolor="#111319",
-                                        font=dict(color="#FFFFFF"), height=360)
-                    fig_h.update_xaxes(showgrid=True, gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
-                    fig_h.update_yaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                                        plot_bgcolor="white", paper_bgcolor="white",
+                                        font=dict(color=MERCK_BLUE), height=360)
+                    fig_h.update_xaxes(showgrid=True, gridcolor="#E8ECEC")
+                    fig_h.update_yaxes(showgrid=False)
                     st.plotly_chart(fig_h, use_container_width=True)
 
-            # ── R3: Component Drill-Through ───────────────────────────────
             with st_r3:
                 cf1, cf2 = st.columns([2, 2])
                 with cf1:
@@ -922,11 +1180,9 @@ if page == "dashboard":
                 st.dataframe(ddf[dcols], use_container_width=True, hide_index=True)
 
                 csv = ddf[dcols].to_csv(index=False).encode()
-                st.download_button("⬇️ Download Detail",
-                                   data=csv, file_name="rolling_drill_through.csv",
-                                   mime="text/csv")
+                st.download_button("⬇️ Download Detail", data=csv,
+                                   file_name="rolling_drill_through.csv", mime="text/csv")
 
-            # ── R4: Gantt ─────────────────────────────────────────────────
             with st_r4:
                 gcol = "Wave" if "Wave" in df.columns else "Module"
                 render_gantt_section(df, gcol, tab_key="rolling")
@@ -935,8 +1191,6 @@ if page == "dashboard":
     # TAB 2 – NON-ROLLING SUBMISSION
     # ══════════════════════════════════════
     with tab_nonrolling:
-
-        # ── Upload ────────────────────────────────────────────────────────
         with st.expander("📂  Upload Non-Rolling Submission File",
                          expanded=st.session_state.nonrolling_data is None):
             col_up2, col_hint2 = st.columns([2, 1])
@@ -967,7 +1221,6 @@ if page == "dashboard":
             df2 = st.session_state.nonrolling_data
             total2, completed2, remaining2, planned2, rate2, variance2 = calculate_metrics(df2)
 
-            # Regional Component Source filter
             if "Component Source" in df2.columns:
                 src_opts = ["All"] + sorted(
                     df2["Component Source"].dropna().astype(str).str.strip().unique().tolist()
@@ -995,7 +1248,6 @@ if page == "dashboard":
                 "📅 Gantt Chart",
             ])
 
-            # ── NR1: Executive Summary ────────────────────────────────────
             with st_nr1:
                 section_label("Key Performance Indicators")
                 pct_c  = completed2 / total2 if total2 > 0 else 0
@@ -1020,28 +1272,21 @@ if page == "dashboard":
                 if not mod_sum.empty:
                     st.markdown("---")
                     section_label("Completed vs Remaining by Module Group")
-                    stk = mod_sum.melt(
-                        id_vars="Module Group",
-                        value_vars=["Completed", "Remaining"],
-                        var_name="Status", value_name="Count"
-                    )
-                    fig_stk = px.bar(
-                        stk, x="Module Group", y="Count", color="Status",
-                        title="Completed vs Remaining by Module Group",
-                        barmode="stack",
-                        color_discrete_map={"Completed": MERCK_TEAL,
-                                            "Remaining": MERCK_ORANGE}
-                    )
-                    fig_stk.update_layout(
-                        plot_bgcolor="#111319", paper_bgcolor="#111319",
-                        font=dict(color="#FFFFFF"), height=270,
-                        margin=dict(t=40, b=10)
-                    )
-                    fig_stk.update_xaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
-                    fig_stk.update_yaxes(gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                    stk = mod_sum.melt(id_vars="Module Group",
+                                       value_vars=["Completed", "Remaining"],
+                                       var_name="Status", value_name="Count")
+                    fig_stk = px.bar(stk, x="Module Group", y="Count", color="Status",
+                                     title="Completed vs Remaining by Module Group",
+                                     barmode="stack",
+                                     color_discrete_map={"Completed": MERCK_TEAL,
+                                                         "Remaining": MERCK_ORANGE})
+                    fig_stk.update_layout(plot_bgcolor="white", paper_bgcolor="white",
+                                          font=dict(color=MERCK_BLUE), height=270,
+                                          margin=dict(t=40, b=10))
+                    fig_stk.update_xaxes(showgrid=False)
+                    fig_stk.update_yaxes(gridcolor="#E8ECEC")
                     st.plotly_chart(fig_stk, use_container_width=True)
 
-            # ── NR2: Module Analysis ──────────────────────────────────────
             with st_nr2:
                 if mod_sum.empty:
                     st.error("Could not derive Module Groups. Check Component ID column.")
@@ -1062,48 +1307,35 @@ if page == "dashboard":
                                         title="% Complete by Module Group",
                                         text="Pct_Complete",
                                         color_discrete_sequence=[MERCK_TEAL])
-                        fig_mp.update_traces(texttemplate="%{text:.1%}",
-                                             textposition="outside")
+                        fig_mp.update_traces(texttemplate="%{text:.1%}", textposition="outside")
                         fig_mp.update_layout(
-                            yaxis=dict(tickformat=".0%", range=[0, 1.25],
-                                       title="% Complete", color="#FFFFFF", title_font=dict(color="#FFFFFF")),
+                            yaxis=dict(tickformat=".0%", range=[0, 1.25], title="% Complete"),
                             xaxis_title="Module Group",
-                            plot_bgcolor="#111319", paper_bgcolor="#111319",
-                            font=dict(color="#FFFFFF")
-                        )
-                        fig_mp.update_xaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
-                        fig_mp.update_yaxes(gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                            plot_bgcolor="white", paper_bgcolor="white",
+                            font=dict(color=MERCK_BLUE))
+                        fig_mp.update_xaxes(showgrid=False)
+                        fig_mp.update_yaxes(gridcolor="#E8ECEC")
                         st.plotly_chart(fig_mp, use_container_width=True)
-
                     with c2n:
-                        pct2 = mod_sum.melt(
-                            id_vars="Module Group",
-                            value_vars=["Pct_Complete", "Pct_Remaining"],
-                            var_name="Metric", value_name="Value"
-                        )
+                        pct2 = mod_sum.melt(id_vars="Module Group",
+                                            value_vars=["Pct_Complete", "Pct_Remaining"],
+                                            var_name="Metric", value_name="Value")
                         pct2["Metric"] = pct2["Metric"].map(
-                            {"Pct_Complete": "% Complete",
-                             "Pct_Remaining": "% Not Complete"}
-                        )
-                        fig_mg = px.bar(
-                            pct2, x="Module Group", y="Value", color="Metric",
-                            title="% Complete vs % Not Complete",
-                            barmode="group",
-                            color_discrete_map={"% Complete":     MERCK_TEAL,
-                                                "% Not Complete": MERCK_GRAY}
-                        )
+                            {"Pct_Complete": "% Complete", "Pct_Remaining": "% Not Complete"})
+                        fig_mg = px.bar(pct2, x="Module Group", y="Value", color="Metric",
+                                        title="% Complete vs % Not Complete",
+                                        barmode="group",
+                                        color_discrete_map={"% Complete":     MERCK_TEAL,
+                                                            "% Not Complete": MERCK_GRAY})
                         fig_mg.update_layout(
-                            yaxis=dict(tickformat=".0%", range=[0, 1.25],
-                                       title="Percent", color="#FFFFFF", title_font=dict(color="#FFFFFF")),
+                            yaxis=dict(tickformat=".0%", range=[0, 1.25], title="Percent"),
                             xaxis_title="Module Group",
-                            plot_bgcolor="#111319", paper_bgcolor="#111319",
-                            font=dict(color="#FFFFFF")
-                        )
-                        fig_mg.update_xaxes(showgrid=False, color="#FFFFFF", title_font=dict(color="#FFFFFF"))
-                        fig_mg.update_yaxes(gridcolor="#444851", color="#FFFFFF", title_font=dict(color="#FFFFFF"))
+                            plot_bgcolor="white", paper_bgcolor="white",
+                            font=dict(color=MERCK_BLUE))
+                        fig_mg.update_xaxes(showgrid=False)
+                        fig_mg.update_yaxes(gridcolor="#E8ECEC")
                         st.plotly_chart(fig_mg, use_container_width=True)
 
-            # ── NR3: Module Drill-Down ────────────────────────────────────
             with st_nr3:
                 if mod_sum.empty:
                     st.error("No module data available.")
@@ -1111,7 +1343,6 @@ if page == "dashboard":
                     sel_mg = st.selectbox("Select Module Group",
                                           mod_sum["Module Group"].tolist(),
                                           key="nr_mg_select")
-
                     det = df2_view.copy()
                     if "Component ID" in det.columns:
                         det["_mg"] = det["Component ID"].apply(compute_module_group)
@@ -1136,10 +1367,8 @@ if page == "dashboard":
 
                     csv2 = det[dcols2].to_csv(index=False).encode()
                     st.download_button("⬇️ Download Detail", data=csv2,
-                                       file_name=f"module_{sel_mg}_detail.csv",
-                                       mime="text/csv")
+                                       file_name=f"module_{sel_mg}_detail.csv", mime="text/csv")
 
-            # ── NR4: Gantt ────────────────────────────────────────────────
             with st_nr4:
                 gcol2 = "Module" if "Module" in df2_view.columns else "Wave"
                 render_gantt_section(df2_view, gcol2, tab_key="nonrolling")
@@ -1151,7 +1380,6 @@ if page == "dashboard":
 elif page == "anchor":
     page_header("📌 Anchor Dates", subtitle="Manual milestone entry & tracking")
 
-    # Bulk import via CSV or Excel
     section_label("📁 Bulk Import (CSV or Excel)")
     st.caption("File must have columns: **Anchor Date**, **Date** (YYYY-MM-DD), **Status** (Complete / In Progress / Not Started)")
     up_col, tmpl_col = st.columns([3, 1])
@@ -1196,10 +1424,10 @@ elif page == "anchor":
     with col_form:
         section_label("Add New Milestone")
         with st.form("anchor_form"):
-            aname  = st.text_input("Milestone Name")
-            adate  = st.date_input("Target Date")
+            aname   = st.text_input("Milestone Name")
+            adate   = st.date_input("Target Date")
             astatus = st.selectbox("Status", ["Complete", "In Progress", "Not Started"])
-            sub    = st.form_submit_button("➕ Add")
+            sub     = st.form_submit_button("➕ Add")
             if sub:
                 if len(st.session_state.anchor_dates) >= 18:
                     st.warning("Maximum 18 anchor dates reached.")
@@ -1216,14 +1444,14 @@ elif page == "anchor":
     with col_tbl:
         section_label("Current Anchor Dates")
         if not st.session_state.anchor_dates.empty:
-            cmap_s = {"Complete":    MERCK_TEAL,
-                      "In Progress": MERCK_ORANGE,
-                      "Not Started": MERCK_GRAY}
-            styled = st.session_state.anchor_dates.style.applymap(
-                lambda v: f"color:{cmap_s.get(v,'black')};font-weight:bold;",
-                subset=["Status"]
-            )
-            st.dataframe(styled, use_container_width=True)
+            anchor_display = st.session_state.anchor_dates.copy()
+            anchor_display["Status"] = anchor_display["Status"].map({
+                "Complete":    "✅ Complete",
+                "In Progress": "🟡 In Progress",
+                "Not Started": "⚪ Not Started",
+            }).fillna(anchor_display["Status"])
+
+            st.dataframe(anchor_display, use_container_width=True, hide_index=True)
 
             row_del = st.selectbox(
                 "Row to remove",
